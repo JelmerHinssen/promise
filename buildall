@@ -1,0 +1,7 @@
+touch CMakeLists.txt
+config=${1:-Debug}
+if [ "$config" = "rel" ]
+then
+    config="RelWithDebInfo"
+fi
+cmake --build build --config $config
