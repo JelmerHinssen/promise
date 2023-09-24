@@ -40,6 +40,7 @@ The main difference between a thread and a coroutine is that there is always onl
 ## yield
 A statement of the form `yield;` or `yield expr;` also blocks the current coroutine, similarly to `await;`.
 The call to `run_in_coroutine(f);` returns a reference to the created coroutine. Using this reference the coroutine can also be resumed, but only if the coroutine was blocked using `yield`. If the reference to the coroutine isn't captured, `yield` should do nothing.
+In a statically typed language it is hard to yield recursively as the type of expr must be the same as the return type of the main function of the coroutine.
 If a value was yielded, it can be obtained from the reference to the coroutine. If `f` returns a value it can also be obtained from this reference.
 `final_yield` can be used to signal that the coroutine should/cannot be resumed anymore. 
 
