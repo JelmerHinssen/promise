@@ -154,11 +154,81 @@ I want all functions to be hookable, but this may require too much overhead: Two
 ## Hooks in C++
 Only coroutines can be hooked. This can be implemented as
 ```
-f(args) {
+Promise<T> f(args) {
     for (filter : filters) {if (filter(args)) co_return;}
     for (hook : preHooks) {co_await hook(args);}
-    co_await actual_f(args);
-    for (hook : postHooks) {co_await hook(args);}
+    T result = co_await actual_f(args);
+    for (hook : postHooks) {co_await hook(result, args);}
+    return result;
 }
 ```
 This has the caveat that hooks must be coroutines, but I think that is what I want, because I want animations to block the main logic.
+
+### Problem!
+I want to be able to say `f.preHooks += [](){do_something();}`, but `f` itself is just a function.
+`Promise::preHooks(f) += [](){do_something();}` is also acceptable. This could be possible. When `f` is called the way coroutines work in C++ is that a promise object is created. If it is possible to get a reference to `f` and its arguments in the constructor of that object, this method is possible. A quick search led me to believe this is not possible. At least not in a portable way. This address must be stored somewhere in memory, but where exactly is implementation defined.
+
+That means that I do need a special Hook<T, Args...> type, just like I have now. This is a function-like object that behaves like a Promise<T>(Args...) function. It's operator() implements the hooks like the code block above.
+
+The annoying thing about this, is that the Hook object needs a name, but the `actual_f` also needs a name, which ideally is the same.
+
+HOOK(name, result, Args...) = 
+class name_impl {
+    result operator()(Args...);
+    friend class Hook<result, Args...>;
+};
+Hook<result, Args...> name{name_impl};
+
+If it is a member method
+
+HOOK(name, Parent, result, Args...) = 
+class name_impl {
+    Parent* parent;
+    result operator()(Parent, Args...);
+    friend class Hook<result, Args...>;
+};
+friend class name_impl;
+Hook<result, Args...> name{name_impl};
+Annoying that name_impl::operator() is not actually a member function.
+You still have two names. I believe it is impossible to not have one of these problems. You can make the `actual_f` a member function, but then it can never have the same name as the hook.
+If you use the pimpl pattern there is a solution as you can make the hook a member of the public type and `actual_f` a member of its Impl class. 
+An advantage of a name_impl class is that you can never accidentally call `actual_f` directly, which can happen quite easily using the pimpl pattern.
+
+HOOK(result, Parent, name, Args...) = 
+class name : public Hook<result, Args...> {
+    Parent* self;
+    Promise<result> impl(Args...);
+    name(Parent* p): Hook<result, Args...>([this](Args... args){return impl(args...);}), self(p){}
+    friend class Parent;
+} name{this};
+friend class name
+
+Instead of 
+Promise<result> name(Args...); // declaration
+Promise<result> Parent::name(Args...){} // definition
+you get
+Hook(result, Parent, name, Args); // declaration
+Promise<result> Parent::name::impl(Args...){} // definition
+
+This is not compatible with const functions
+CONST_HOOK(result, Parent, name, Args...) = 
+class name : public Hook<result, Args...> {
+    const Parent* self;
+    Promise<result> impl(Args...) const;
+    name(const Parent* p): Hook<result, Args...>([this](Args... args){return impl(args...);}), self(p){}
+    friend class Parent;
+} name{this};
+friend class name
+
+Hook must have a const operator() and the non const operator() must be deleted in this case.
+For now I will not implement this.
+
+### Problem 2
+When a hook or hooked function gets destroyed, copied or moved, unexpected things can happen. For now: delete copy and move constructor of hook and make it the users responsibility to make sure the lifetime of listeners is at least as long as the lifetime of the hook.
+
+### Terminology
+In the explanation I have used hook to denote the listeners and hookable function to denote the function they are listening to. But in the code example above i've used the type Hook to denote the hookable function. That needs to be fixed.
+I could switch to Observer and Observable or Listener and Event. I do prefer preHooks and postHooks to preListener and postListener, but I prefer Event or Observable to Hookable.
+Chat gpt says that Hook point is more common than hookable, but I also cannot get a clear answer to whether a hook refers to an event or a listener.
+The problem I have with Event is that it sounds way more deliberate at the point of firing the event, whereas hooking into a function should only be deliberate at the point of the listener. Every function call should silently fire an event.
+Observable is a bit better, but I would use that for something like an Observable<int> which fires an event every time the contained value changes
