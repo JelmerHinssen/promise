@@ -41,6 +41,12 @@ The main difference between a thread and a coroutine is that there is always onl
 A statement of the form `yield;` or `yield expr;` also blocks the current coroutine, similarly to `await;`.
 The call to `run_in_coroutine(f);` returns a reference to the created coroutine. Using this reference the coroutine can also be resumed, but only if the coroutine was blocked using `yield`. If the reference to the coroutine isn't captured, `yield` should do nothing.
 In a statically typed language it is hard to yield recursively as the type of expr must be the same as the return type of the main function of the coroutine.
+You could use std::any in C++, to allow yielding any type, but that is confusing at the calling side. You could also dynamic_cast the main calling promise to the type and generate a runtime error if you are yielding an invalid type.
+I don't like these options for statically typed languages.
+
+You could also give every function a return type and a yield type. If a function has a yield type it can only call functions with the same yield type or no yield type. Functions with a different yield type must be run in a new coroutine. You can make it a bit more general and say a function can call a function with a yield type that is convertible to the current yield type. This allows a function with yield type of std::any to call any function.
+
+
 If a value was yielded, it can be obtained from the reference to the coroutine. If `f` returns a value it can also be obtained from this reference.
 `final_yield` can be used to signal that the coroutine should/cannot be resumed anymore. 
 
