@@ -10,6 +10,20 @@ namespace promise {
 template <typename T> class SuspensionPoint;
 template <typename R, typename Y> class Promise;
 
+namespace detail {
+    template <typename T>
+    struct promise_helper {
+        using type = std::optional<T>;
+    };
+    template <>
+    struct promise_helper<void> {
+        using type = bool;
+    };
+}
+
+template <typename T>
+using optional = detail::promise_helper<T>::type;
+
 class Coroutine {
     public:
     std::suspend_always initial_suspend() const noexcept {return {};}
@@ -36,40 +50,37 @@ class YieldingCoroutine : public Coroutine {
 template <typename R, typename Y>
 class ReturningCoroutine : public YieldingCoroutine<Y> {
 public:
-    void return_void() requires(std::is_void_v<R>) {}
+    void return_void() requires(std::is_void_v<R>) {m_return_value = true;}
     Promise<R, Y> get_return_object();
+private:
+    optional<R> m_return_value;
+    friend class Promise<R, Y>;
 };
 
 class CoroutineHandle {
-    public:
-    CoroutineHandle(Coroutine* handle): coroutine(handle) {
-        coroutine->gain_ref();
+public:
+    CoroutineHandle(Coroutine& handle): 
+        m_coroutine(handle),
+        m_started(false) {
+        m_coroutine.gain_ref();
     }
     ~CoroutineHandle() { 
-        coroutine->lose_ref();
+        m_coroutine.lose_ref();
     }
-    private:
-    Coroutine* coroutine;
+    bool done() const noexcept {return m_coroutine.handle().done();}
+    bool started() const noexcept {return m_started;}
+    bool yielded() const noexcept {return false;}
+    void start() {m_started = true; m_coroutine.handle().resume();}
+private:
+    Coroutine& m_coroutine;
+    bool m_started;
+
 };
-
-namespace detail {
-    template <typename T>
-    struct promise_helper {
-        using type = std::optional<T>;
-    };
-    template <>
-    struct promise_helper<void> {
-        using type = bool;
-    };
-}
-
-template <typename T>
-using optional = detail::promise_helper<T>::type;
 
 template <typename R, typename Y = void>
 class Promise : public CoroutineHandle {
 public:
-    Promise(Coroutine* handle): CoroutineHandle(handle) {}
+    Promise(ReturningCoroutine<R, Y>& handle): CoroutineHandle(handle), m_return_value(handle.m_return_value) {}
     // auto then(auto f) {
     //     if constexpr (std::is_void_v<R>) {
     //         co_await *this;
@@ -88,17 +99,15 @@ public:
     //     }
     // }
     optional<Y> yield_value() const noexcept {return {};}
-    optional<R> return_value() const noexcept {return {};}
-    bool done() const noexcept {return false;}
-    bool started() const noexcept {return false;}
-    bool yielded() const noexcept {return false;}
-    void start();
+    optional<R> return_value() const noexcept {return m_return_value;}
     using promise_type = ReturningCoroutine<R, Y>;
+private:
+    optional<R>& m_return_value;
 };
 
 template <typename R, typename Y>
 Promise<R, Y> ReturningCoroutine<R, Y>::get_return_object() {
-    return {this};
+    return {*this};
 }
 
 }

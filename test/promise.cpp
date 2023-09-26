@@ -28,3 +28,14 @@ TEST_F(PromiseTest, emptyCoroutine) {
     EXPECT_FALSE(p.yield_value());
     EXPECT_FALSE(p.yielded());
 }
+
+TEST_F(PromiseTest, startEmptyCoroutine) {
+    auto p = empty_co();
+    p.start();
+    EXPECT_EQ(living.size(), 1);
+    EXPECT_TRUE(p.started());
+    EXPECT_TRUE(p.done());
+    EXPECT_TRUE(p.return_value());
+    EXPECT_FALSE(p.yield_value());
+    EXPECT_FALSE(p.yielded());
+}
