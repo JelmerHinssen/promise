@@ -47,14 +47,37 @@ template <typename Y>
 class YieldingCoroutine : public Coroutine {
 
 };
+
+namespace detail {
+
+template <typename R>
+class ReturnValue {
+public: 
+    template <typename T> void return_value(T&& arg) {m_return_value = std::forward<T>(arg);}
+protected:
+    optional<R> m_return_value;
+    template <typename R1, typename Y> friend class Promise;
+};
+
+template <>
+class ReturnValue<void> {
+public: 
+    void return_void() {m_return_value = true;}
+protected:
+    optional<void> m_return_value;
+
+    template <typename R, typename Y> friend class Promise;
+};
+
+}
+
 template <typename R, typename Y>
-class ReturningCoroutine : public YieldingCoroutine<Y> {
+class ReturningCoroutine : public YieldingCoroutine<Y>, public detail::ReturnValue<R> {
 public:
-    void return_void() requires(std::is_void_v<R>) {m_return_value = true;}
     Promise<R, Y> get_return_object();
 private:
-    optional<R> m_return_value;
-    friend class Promise<R, Y>;
+    
+    
 };
 
 class CoroutineHandle {
