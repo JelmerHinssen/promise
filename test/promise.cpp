@@ -13,7 +13,6 @@ public:
     ~PromiseTest() {
         EXPECT_TRUE(living.empty());
     }
-
     Promise<void> empty_co (){
         co_return;
     }
@@ -22,6 +21,10 @@ public:
     }
     Promise<int> conditional_returning (bool b) {
         if (b) co_return 1;
+    }
+    Promise<void, int> yielding_co() {
+        co_yield 5;
+        co_return;
     }
 };
 
@@ -53,6 +56,35 @@ TEST_F(PromiseTest, startEmptyReturningCoroutine) {
     EXPECT_TRUE(p.done());
     EXPECT_EQ(p.return_value(), 1);
     EXPECT_FALSE(p.yield_value());
+    EXPECT_FALSE(p.yielded());
+}
+
+TEST_F(PromiseTest, startYieldingCoroutine) {
+    auto p = yielding_co();
+    p.start();
+    EXPECT_EQ(living.size(), 1);
+    EXPECT_TRUE(p.started());
+    EXPECT_FALSE(p.done());
+    EXPECT_FALSE(p.return_value());
+    EXPECT_EQ(p.yield_value(), 5);
+    EXPECT_TRUE(p.yielded());
+}
+
+TEST_F(PromiseTest, resumeYieldingCoroutine) {
+    auto p = yielding_co();
+    p.start();
+    EXPECT_EQ(living.size(), 1);
+    EXPECT_TRUE(p.started());
+    EXPECT_FALSE(p.done());
+    EXPECT_FALSE(p.return_value());
+    EXPECT_EQ(p.yield_value(), 5);
+    EXPECT_TRUE(p.yielded());
+    p.resume();
+    EXPECT_EQ(living.size(), 1);
+    EXPECT_TRUE(p.started());
+    EXPECT_TRUE(p.done());
+    EXPECT_TRUE(p.return_value());
+    EXPECT_EQ(p.yield_value(), 5);
     EXPECT_FALSE(p.yielded());
 }
 

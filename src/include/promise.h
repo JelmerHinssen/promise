@@ -35,7 +35,8 @@ class Coroutine {
     ~Coroutine() {living.erase(this);}
     #endif
     friend class CoroutineHandle;
-
+    protected:
+    bool m_yielded = false;
     private:
     using Handle = std::coroutine_handle<Coroutine>;
     void gain_ref() {ref_count++;}
@@ -45,7 +46,15 @@ class Coroutine {
 };
 template <typename Y>
 class YieldingCoroutine : public Coroutine {
-
+public:
+    template <typename T> std::suspend_always yield_value(T&& arg) {
+        m_yield_value = std::forward<T>(arg);
+        m_yielded = true;
+        return {};
+    }
+private:
+    optional<Y> m_yield_value;
+    template <typename R, typename Y1> friend class Promise;
 };
 
 namespace detail {
@@ -92,8 +101,9 @@ public:
     }
     bool done() const noexcept {return m_coroutine.handle().done();}
     bool started() const noexcept {return m_started;}
-    bool yielded() const noexcept {return false;}
+    bool yielded() const noexcept {return m_coroutine.m_yielded;}
     void start() {m_started = true; m_coroutine.handle().resume();}
+    void resume() {m_coroutine.m_yielded = false; m_coroutine.handle().resume();}
 private:
     Coroutine& m_coroutine;
     bool m_started;
@@ -103,7 +113,10 @@ private:
 template <typename R, typename Y = void>
 class Promise : public CoroutineHandle {
 public:
-    Promise(ReturningCoroutine<R, Y>& handle): CoroutineHandle(handle), m_return_value(handle.m_return_value) {}
+    Promise(ReturningCoroutine<R, Y>& handle): 
+        CoroutineHandle(handle), 
+        m_return_value(handle.m_return_value),
+        m_yield_value(handle.m_yield_value) {}
     // auto then(auto f) {
     //     if constexpr (std::is_void_v<R>) {
     //         co_await *this;
@@ -121,11 +134,12 @@ public:
     //         co_return co_await f(co_await *this);
     //     }
     // }
-    optional<Y> yield_value() const noexcept {return {};}
+    optional<Y> yield_value() const noexcept {return m_yield_value;}
     optional<R> return_value() const noexcept {return m_return_value;}
     using promise_type = ReturningCoroutine<R, Y>;
 private:
     optional<R>& m_return_value;
+    optional<Y>& m_yield_value;
 };
 
 template <typename R, typename Y>
