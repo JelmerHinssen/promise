@@ -1,10 +1,10 @@
 #pragma once
+#include <cassert>
 #include <concepts>
 #include <coroutine>
 #include <optional>
 #include <type_traits>
 #include <unordered_set>
-#include <cassert>
 
 namespace promise {
 
@@ -34,29 +34,53 @@ class Coroutine {
     void unhandled_exception() {}
 #ifdef TEST
     inline static std::unordered_set<const Coroutine*> living = {};
-    Coroutine() {
+#endif
+    Coroutine() : m_handle(std::coroutine_handle<Coroutine>::from_promise(*this)) {
+#ifdef TEST
         auto it = living.find(this);
         EXPECT_EQ(it, living.end());
         living.insert(this);
+#endif
     }
+#ifdef TEST
     ~Coroutine() {
         auto it = living.find(this);
         EXPECT_NE(it, living.end());
         living.erase(this);
     }
 #endif
-    friend class CoroutineHandle;
+    bool done() const noexcept { return m_handle.done(); }
+    bool started() const noexcept { return m_started; }
+    bool yielded() const noexcept { return m_yielded; }
+    void start() {
+        m_started = true;
+        m_handle.resume();
+    }
+    void resume() {
+        m_yielded = false;
+        m_handle.resume();
+    }
+    class Handle {
+       public:
+        Handle(Coroutine& handle) : m_coroutine(handle) { m_coroutine.gain_ref(); }
+        ~Handle() { m_coroutine.lose_ref(); }
+        const Coroutine* operator->() const { return &m_coroutine; }
+        Coroutine* operator->() { return &m_coroutine; }
+
+       protected:
+        Coroutine& m_coroutine;
+    };
 
    protected:
     bool m_yielded = false;
+    bool m_started = false;
 
    private:
-    using Handle = std::coroutine_handle<Coroutine>;
     void gain_ref() { ref_count++; }
     void lose_ref() {
-        if (!--ref_count) handle().destroy();
+        if (!--ref_count) m_handle.destroy();
     }
-    inline Handle handle() noexcept { return Handle::from_promise(*this); }
+    std::coroutine_handle<Coroutine> m_handle;
     int ref_count = 0;
 };
 template <typename Y>
@@ -72,6 +96,15 @@ class YieldingCoroutine : public Coroutine {
     auto await_transform(Promise<R, Y>&& r) {
         return r;
     }
+    optional<Y> yielded_value() const noexcept { return m_yield_value; }
+
+    class Handle : public Coroutine::Handle {
+       public:
+        Handle(YieldingCoroutine& handle) : Coroutine::Handle(handle) {}
+        const YieldingCoroutine* operator->() const { return (const YieldingCoroutine*) &this->m_coroutine; }
+        YieldingCoroutine* operator->() { return (YieldingCoroutine*) &this->m_coroutine; }
+    };
+
    private:
     optional<Y> m_yield_value;
     template <typename R, typename Y1>
@@ -101,9 +134,6 @@ class ReturnValue<void> {
 
    protected:
     optional<void> m_return_value;
-
-    template <typename R, typename Y>
-    friend class Promise;
 };
 
 }  // namespace detail
@@ -112,58 +142,36 @@ template <typename R, typename Y>
 class ReturningCoroutine : public YieldingCoroutine<Y>, public detail::ReturnValue<R> {
    public:
     Promise<R, Y> get_return_object();
+    optional<R> returned_value() const noexcept { return this->m_return_value; }
 
-   private:
-};
-
-class CoroutineHandle {
-   public:
-    CoroutineHandle(Coroutine& handle) : m_coroutine(handle), m_started(false) { m_coroutine.gain_ref(); }
-    ~CoroutineHandle() { m_coroutine.lose_ref(); }
-    bool done() const noexcept { return m_coroutine.handle().done(); }
-    bool started() const noexcept { return m_started; }
-    bool yielded() const noexcept { return m_coroutine.m_yielded; }
-    void start() {
-        m_started = true;
-        m_coroutine.handle().resume();
-    }
-    void resume() {
-        m_coroutine.m_yielded = false;
-        m_coroutine.handle().resume();
-    }
-
-   protected:
-    Coroutine& m_coroutine;
-    bool m_started;
+    class Handle : public YieldingCoroutine<Y>::Handle {
+       public:
+        Handle(ReturningCoroutine& handle) : YieldingCoroutine<Y>::Handle(handle) {}
+        const ReturningCoroutine* operator->() const { return (const ReturningCoroutine*) &this->m_coroutine; }
+        ReturningCoroutine* operator->() { return (ReturningCoroutine*) &this->m_coroutine; }
+    };
 };
 
 template <typename R, typename Y = void>
-class Promise : public CoroutineHandle {
+class Promise : public ReturningCoroutine<R, Y>::Handle {
    public:
-    Promise(ReturningCoroutine<R, Y>& handle)
-        : CoroutineHandle(handle), m_return_value(handle.m_return_value), m_yield_value(handle.m_yield_value) {}
-    optional<Y> yield_value() const noexcept { return m_yield_value; }
-    optional<R> return_value() const noexcept { return m_return_value; }
+    Promise(ReturningCoroutine<R, Y>& handle) : ReturningCoroutine<R, Y>::Handle(handle) {}
     using promise_type = ReturningCoroutine<R, Y>;
     bool await_ready() {
-        start();
-        bool should_supsend = !done();
+        this->m_coroutine.start();
+        bool should_supsend = !this->m_coroutine.done();
         return !should_supsend;
     }
-    bool await_suspend(auto handle) {
+    bool await_suspend([[maybe_unused]] auto handle) {
         bool should_suspend = true;
         return should_suspend;
     }
     R await_resume() {
         if constexpr (!std::is_void_v<R>) {
-            if (!m_return_value) throw std::runtime_error("Function did not return a value");
-            return *m_return_value;
+            if (!this->return_value()) throw std::runtime_error("Function did not return a value");
+            return *this->return_value();
         }
     }
-
-   private:
-    optional<R>& m_return_value;
-    optional<Y>& m_yield_value;
 };
 
 template <typename R, typename Y>

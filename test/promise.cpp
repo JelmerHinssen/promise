@@ -70,146 +70,146 @@ TEST_F(PromiseTest, emptyCoroutine) {
     auto p = empty_co();
     EXPECT_EQ(function_counts, expected_counts);
     EXPECT_EQ(living.size(), 1);
-    EXPECT_FALSE(p.started());
-    EXPECT_FALSE(p.done());
-    EXPECT_FALSE(p.return_value());
-    EXPECT_FALSE(p.yield_value());
-    EXPECT_FALSE(p.yielded());
+    EXPECT_FALSE(p->started());
+    EXPECT_FALSE(p->done());
+    EXPECT_FALSE(p->returned_value());
+    EXPECT_FALSE(p->yielded_value());
+    EXPECT_FALSE(p->yielded());
 }
 
 TEST_F(PromiseTest, emptyReturningCoroutine) {
     auto p = empty_returning();
     EXPECT_EQ(function_counts, expected_counts);
     EXPECT_EQ(living.size(), 1);
-    EXPECT_FALSE(p.started());
-    EXPECT_FALSE(p.done());
-    EXPECT_FALSE(p.return_value());
-    EXPECT_FALSE(p.yield_value());
-    EXPECT_FALSE(p.yielded());
+    EXPECT_FALSE(p->started());
+    EXPECT_FALSE(p->done());
+    EXPECT_FALSE(p->returned_value());
+    EXPECT_FALSE(p->yielded_value());
+    EXPECT_FALSE(p->yielded());
 }
 
 TEST_F(PromiseTest, startEmptyReturningCoroutine) {
     auto p = empty_returning();
-    p.start();
+    p->start();
     expected_counts[EMPTY_RETURNING]++;
     EXPECT_EQ(function_counts, expected_counts);
     EXPECT_EQ(living.size(), 1);
-    EXPECT_TRUE(p.started());
-    EXPECT_TRUE(p.done());
-    EXPECT_EQ(p.return_value(), 1);
-    EXPECT_FALSE(p.yield_value());
-    EXPECT_FALSE(p.yielded());
+    EXPECT_TRUE(p->started());
+    EXPECT_TRUE(p->done());
+    EXPECT_EQ(p->returned_value(), 1);
+    EXPECT_FALSE(p->yielded_value());
+    EXPECT_FALSE(p->yielded());
 }
 
 TEST_F(PromiseTest, startYieldingCoroutine) {
     auto p = yielding_co();
-    p.start();
+    p->start();
     expected_counts[YIELDING_CO_0]++;
     EXPECT_EQ(function_counts, expected_counts);
     EXPECT_EQ(living.size(), 1);
-    EXPECT_TRUE(p.started());
-    EXPECT_FALSE(p.done());
-    EXPECT_FALSE(p.return_value());
-    EXPECT_EQ(p.yield_value(), 5);
-    EXPECT_TRUE(p.yielded());
+    EXPECT_TRUE(p->started());
+    EXPECT_FALSE(p->done());
+    EXPECT_FALSE(p->returned_value());
+    EXPECT_EQ(p->yielded_value(), 5);
+    EXPECT_TRUE(p->yielded());
 }
 
 TEST_F(PromiseTest, resumeYieldingCoroutine) {
     auto p = yielding_co();
-    p.start();
+    p->start();
     expected_counts[YIELDING_CO_0]++;
     EXPECT_EQ(function_counts, expected_counts);
     EXPECT_EQ(living.size(), 1);
-    EXPECT_TRUE(p.started());
-    EXPECT_FALSE(p.done());
-    EXPECT_FALSE(p.return_value());
-    EXPECT_EQ(p.yield_value(), 5);
-    EXPECT_TRUE(p.yielded());
-    p.resume();
+    EXPECT_TRUE(p->started());
+    EXPECT_FALSE(p->done());
+    EXPECT_FALSE(p->returned_value());
+    EXPECT_EQ(p->yielded_value(), 5);
+    EXPECT_TRUE(p->yielded());
+    p->resume();
     expected_counts[YIELDING_CO_1]++;
     EXPECT_EQ(function_counts, expected_counts);
     EXPECT_EQ(living.size(), 1);
-    EXPECT_TRUE(p.started());
-    EXPECT_TRUE(p.done());
-    EXPECT_TRUE(p.return_value());
-    EXPECT_EQ(p.yield_value(), 5);
-    EXPECT_FALSE(p.yielded());
+    EXPECT_TRUE(p->started());
+    EXPECT_TRUE(p->done());
+    EXPECT_TRUE(p->returned_value());
+    EXPECT_EQ(p->yielded_value(), 5);
+    EXPECT_FALSE(p->yielded());
 }
 
 TEST_F(PromiseTest, startConditionalReturningCoroutine) {
     auto p = conditional_returning(false);
-    p.start();
+    p->start();
     expected_counts[CONDITIONAL_RETURNING]++;
     EXPECT_EQ(function_counts, expected_counts);
     EXPECT_EQ(living.size(), 1);
-    EXPECT_TRUE(p.started());
-    EXPECT_TRUE(p.done());
-    EXPECT_FALSE(p.return_value());
-    EXPECT_FALSE(p.yield_value());
-    EXPECT_FALSE(p.yielded());
+    EXPECT_TRUE(p->started());
+    EXPECT_TRUE(p->done());
+    EXPECT_FALSE(p->returned_value());
+    EXPECT_FALSE(p->yielded_value());
+    EXPECT_FALSE(p->yielded());
 }
 
 TEST_F(PromiseTest, startEmptyCoroutine) {
     auto p = empty_co();
-    p.start();
+    p->start();
     expected_counts[EMPTY_CO]++;
     EXPECT_EQ(function_counts, expected_counts);
     EXPECT_EQ(living.size(), 1);
-    EXPECT_TRUE(p.started());
-    EXPECT_TRUE(p.done());
-    EXPECT_TRUE(p.return_value());
-    EXPECT_FALSE(p.yield_value());
-    EXPECT_FALSE(p.yielded());
+    EXPECT_TRUE(p->started());
+    EXPECT_TRUE(p->done());
+    EXPECT_TRUE(p->returned_value());
+    EXPECT_FALSE(p->yielded_value());
+    EXPECT_FALSE(p->yielded());
 }
 
 TEST_F(PromiseTest, nestedCoroutine) {
     auto p = nested_empty();
-    p.start();
+    p->start();
     expected_counts[NESTED_EMPTY_0]++;
     expected_counts[EMPTY_CO]++;
     expected_counts[NESTED_EMPTY_1]++;
     EXPECT_EQ(function_counts, expected_counts);
     EXPECT_EQ(living.size(), 1);
-    EXPECT_TRUE(p.started());
-    EXPECT_TRUE(p.done());
-    EXPECT_TRUE(p.return_value());
-    EXPECT_FALSE(p.yield_value());
-    EXPECT_FALSE(p.yielded());
+    EXPECT_TRUE(p->started());
+    EXPECT_TRUE(p->done());
+    EXPECT_TRUE(p->returned_value());
+    EXPECT_FALSE(p->yielded_value());
+    EXPECT_FALSE(p->yielded());
 }
 
 TEST_F(PromiseTest, nestedYieldingCoroutine) {
     auto p = nested_yielding();
-    p.start();
+    p->start();
     expected_counts[NESTED_YIELDING_0]++;
     expected_counts[YIELDING_CO_0]++;
     EXPECT_EQ(function_counts, expected_counts);
     EXPECT_EQ(living.size(), 2);
-    EXPECT_TRUE(p.started());
-    EXPECT_FALSE(p.done());
-    EXPECT_FALSE(p.return_value());
-    EXPECT_EQ(p.yield_value(), 5);
-    EXPECT_TRUE(p.yielded());
+    EXPECT_TRUE(p->started());
+    EXPECT_FALSE(p->done());
+    EXPECT_FALSE(p->returned_value());
+    EXPECT_EQ(p->yielded_value(), 5);
+    EXPECT_TRUE(p->yielded());
 
-    p.resume();
+    p->resume();
     expected_counts[YIELDING_CO_1]++;
     expected_counts[NESTED_YIELDING_1]++;
     expected_counts[YIELDING_CO_0]++;
     EXPECT_EQ(function_counts, expected_counts);
     EXPECT_EQ(living.size(), 2);
-    EXPECT_TRUE(p.started());
-    EXPECT_FALSE(p.done());
-    EXPECT_FALSE(p.return_value());
-    EXPECT_EQ(p.yield_value(), 5);
-    EXPECT_TRUE(p.yielded());
+    EXPECT_TRUE(p->started());
+    EXPECT_FALSE(p->done());
+    EXPECT_FALSE(p->returned_value());
+    EXPECT_EQ(p->yielded_value(), 5);
+    EXPECT_TRUE(p->yielded());
 
-    p.resume();
+    p->resume();
     expected_counts[YIELDING_CO_1]++;
     expected_counts[NESTED_YIELDING_2]++;
     EXPECT_EQ(function_counts, expected_counts);
     EXPECT_EQ(living.size(), 1);
-    EXPECT_TRUE(p.started());
-    EXPECT_TRUE(p.done());
-    EXPECT_TRUE(p.return_value());
-    EXPECT_EQ(p.yield_value(), 5); // ?
-    EXPECT_FALSE(p.yielded());
+    EXPECT_TRUE(p->started());
+    EXPECT_TRUE(p->done());
+    EXPECT_TRUE(p->returned_value());
+    EXPECT_EQ(p->yielded_value(), 5); // ?
+    EXPECT_FALSE(p->yielded());
 }
