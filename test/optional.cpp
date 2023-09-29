@@ -102,14 +102,31 @@ TEST_F(UnassignableTest, replaceUnassignable) {
     EXPECT_EQ(dtor_count, 1);
 }
 
-// TEST(Optional, emptyReference) {
-//     optional<int&> x;
-//     EXPECT_FALSE(x);
-// }
+TEST(Optional, emptyReference) {
+    optional<int&> x;
+    EXPECT_FALSE(x);
+}
 
-// TEST(Optional, nonEmptyReference) {
-//     int y = 2;
-//     optional<int&> x = y;
-//     EXPECT_TRUE(x);
-//     EXPECT_EQ(*x, y);
-// }
+TEST(Optional, nonEmptyReference) {
+    int y = 2;
+    optional<int&> x = y;
+    EXPECT_TRUE(x);
+    EXPECT_EQ(*x, 2);
+    y = 3;
+    EXPECT_EQ(*x, 3);
+    *x = 4;
+    EXPECT_EQ(y, 4);
+}
+
+TEST(Optional, assignReference) {
+    int y = 2;
+    optional<int&> x{};
+    EXPECT_FALSE(x);
+    x = y;
+    EXPECT_TRUE(x);
+    EXPECT_EQ(*x, 2);
+    y = 3;
+    EXPECT_EQ(*x, 3);
+    *x = 4;
+    EXPECT_EQ(y, 4);
+}

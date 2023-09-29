@@ -18,7 +18,7 @@ struct optional_helper<T> {
     using type = std::optional<T>;
 };
 
-template <typename T>
+template <typename T, typename Ref = T>
 class inplace_optional {
    public:
     struct Dummy {
@@ -36,11 +36,11 @@ class inplace_optional {
         requires(sizeof...(Args) > 0)
         : m_value(std::forward<Args>(args)...), m_has_value(true) {}
     ~inplace_optional() { destroy(); }
-    T& operator*() & { return m_value; }
-    T* operator->() { return &m_value; }
-    const T& operator*() const& { return m_value; }
-    const T* operator->() const { return &m_value; }
-    T&& operator*() && { return std::move(m_value); }
+    Ref& operator*() & { return m_value; }
+    Ref* operator->() { return &m_value; }
+    const Ref& operator*() const& { return m_value; }
+    const Ref* operator->() const { return &m_value; }
+    Ref&& operator*() && { return std::move(m_value); }
     template <typename... Args>
     void assign(Args&&... args) {
         reset();
@@ -66,6 +66,16 @@ class inplace_optional {
 template <is_not_assignable T>
 struct optional_helper<T> {
     using type = inplace_optional<T>;
+};
+template <typename T>
+struct optional_helper<T&> {
+    struct Reference {
+        T& ref;
+        operator T&() { return ref; }
+        operator const T&() const { return ref; }
+
+    };
+    using type = inplace_optional<Reference, T>;
 };
 template <>
 struct optional_helper<void> {
