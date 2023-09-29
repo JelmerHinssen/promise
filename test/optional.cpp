@@ -60,11 +60,25 @@ TEST_F(UnassignableTest, nonEmptyUnassignable) {
     int y = 2;
     Unassignable u{y};
     EXPECT_EQ(living_count, 1);
-    optional<Unassignable> x = u;
+    optional<Unassignable> x{u};
     EXPECT_TRUE(x);
     EXPECT_EQ(x->x, y);
     EXPECT_EQ(living_count, 2);
     EXPECT_EQ(dtor_count, 0);
+}
+
+TEST_F(UnassignableTest, clearUnassignable) {
+    int y = 2;
+    Unassignable u{y};
+    EXPECT_EQ(living_count, 1);
+    optional<Unassignable> x{u};
+    EXPECT_TRUE(x);
+    EXPECT_EQ(x->x, y);
+    EXPECT_EQ(living_count, 2);
+    EXPECT_EQ(dtor_count, 0);
+    x = {};
+    EXPECT_EQ(living_count, 1);
+    EXPECT_EQ(dtor_count, 1);
 }
 
 TEST_F(UnassignableTest, assignUnassignable) {
@@ -74,7 +88,7 @@ TEST_F(UnassignableTest, assignUnassignable) {
     EXPECT_FALSE(x);
     EXPECT_EQ(living_count, 1);
     EXPECT_EQ(dtor_count, 0);
-    x = u;
+    std::move(x) = u;
     EXPECT_TRUE(x);
     EXPECT_EQ(x->x, y);
     EXPECT_EQ(living_count, 2);
@@ -90,12 +104,12 @@ TEST_F(UnassignableTest, replaceUnassignable) {
     EXPECT_FALSE(x);
     EXPECT_EQ(living_count, 2);
     EXPECT_EQ(dtor_count, 0);
-    x = u;
+    std::move(x) = u;
     EXPECT_TRUE(x);
     EXPECT_EQ(x->x, y);
     EXPECT_EQ(living_count, 3);
     EXPECT_EQ(dtor_count, 0);
-    x = v;
+    std::move(x) = v;
     EXPECT_TRUE(x);
     EXPECT_EQ(x->x, z);
     EXPECT_EQ(living_count, 3);
@@ -104,14 +118,27 @@ TEST_F(UnassignableTest, replaceUnassignable) {
 
 TEST(Optional, emptyReference) {
     optional<int&> x;
+    optional<int&> y;
     EXPECT_FALSE(x);
+    EXPECT_EQ(x, x);
+    EXPECT_EQ(x, y);
+    EXPECT_NE(x, 0);
+}
+
+TEST(Optional, compareDifferentTypes) {
+    optional<int&> x;
+    optional<long long&> y;
+    EXPECT_FALSE(x);
+    EXPECT_EQ(x, x);
+    EXPECT_EQ(x, y);
+    EXPECT_NE(x, 0);
 }
 
 TEST(Optional, nonEmptyReference) {
     int y = 2;
-    optional<int&> x = y;
+    optional<int&> x{y};
     EXPECT_TRUE(x);
-    EXPECT_EQ(*x, 2);
+    EXPECT_EQ(x, 2);
     y = 3;
     EXPECT_EQ(*x, 3);
     *x = 4;
@@ -122,11 +149,27 @@ TEST(Optional, assignReference) {
     int y = 2;
     optional<int&> x{};
     EXPECT_FALSE(x);
-    x = y;
+    std::move(x) = y;
     EXPECT_TRUE(x);
     EXPECT_EQ(*x, 2);
     y = 3;
     EXPECT_EQ(*x, 3);
     *x = 4;
     EXPECT_EQ(y, 4);
+}
+
+TEST(Optional, replaceReference) {
+    int y = 2;
+    int z = 3;
+    optional<int&> x{};
+    EXPECT_FALSE(x);
+    std::move(x) = y;
+    EXPECT_TRUE(x);
+    EXPECT_EQ(x, 2);
+    y = 4;
+    EXPECT_EQ(x, 4);
+    x = optional<int&>(z);
+    EXPECT_EQ(*x, 3);
+    z = 2;
+    EXPECT_EQ(*x, 2);
 }
