@@ -2,9 +2,9 @@
 #include <cassert>
 #include <concepts>
 #include <coroutine>
+#include <stdexcept>
 #include <type_traits>
 #include <unordered_set>
-#include <stdexcept>
 
 #include "optional.h"
 
@@ -97,17 +97,9 @@ class YieldingCoroutine : public Coroutine {
         Handle caller;
         bool await_ready() {
             callee->start();
-            bool should_suspend = !callee->done();
-            return !should_suspend;
+            return caller->wait_for(callee);
         }
-
-        bool await_suspend([[maybe_unused]] auto caller_handle) {
-            bool should_suspend = true;
-            if (callee->yielded()) {
-                caller->yield_value(callee->yielded_value());
-            }
-            return should_suspend;
-        }
+        bool await_suspend([[maybe_unused]] auto caller_handle) { return true; }
         R1 await_resume() {
             if constexpr (!std::is_void_v<R1>) {
                 if (!callee->returned_value()) throw std::runtime_error("Function did not return a value");
@@ -121,10 +113,29 @@ class YieldingCoroutine : public Coroutine {
     Awaiter<R1, Y1> await_transform(Promise<R1, Y1>&& caller) {
         return {std::move(caller), {*this}};
     }
+    bool wait_for(Handle& h) {
+        if (h->done()) {
+            calling.reset();
+            return true;
+        };
+        std::move(calling) = h;
+        if (h->yielded()) {
+            yield_value(h->yielded_value());
+        }
+        return false;
+    }
+    void resume() {
+        m_yielded = false;
+        m_yield_value.reset();
+        if (!calling || ((*calling)->resume(), wait_for(*calling))) {
+            Coroutine::resume();
+        }
+    }
 
    protected:
    private:
     optional<Y> m_yield_value{};
+    optional<Handle> calling{};
 };
 
 namespace detail {

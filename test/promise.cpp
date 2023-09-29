@@ -139,7 +139,7 @@ TEST_F(PromiseTest, resumeYieldingCoroutine) {
     EXPECT_TRUE(p->started());
     EXPECT_TRUE(p->done());
     EXPECT_TRUE(p->returned_value());
-    EXPECT_EQ(p->yielded_value(), 5);
+    EXPECT_FALSE(p->yielded_value());
     EXPECT_FALSE(p->yielded());
 }
 
@@ -233,6 +233,6 @@ TEST_F(PromiseTest, nestedYieldingCoroutine) {
     EXPECT_TRUE(p->started());
     EXPECT_TRUE(p->done());
     EXPECT_TRUE(p->returned_value());
-    EXPECT_EQ(p->yielded_value(), 5);  // ?
+    EXPECT_FALSE(p->yielded_value());
     EXPECT_FALSE(p->yielded());
 }
