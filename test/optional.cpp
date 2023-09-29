@@ -1,9 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <array>
-
-#include "promise.h"
-
+#include "optional.h"
 using namespace promise;
 
 TEST(Optional, emptyInt) {

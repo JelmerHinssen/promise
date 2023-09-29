@@ -3,4 +3,4 @@ if [ "$config" = "rel" ]
 then
     config="RelWithDebInfo"
 fi
-cmake --build build --config $config --target promise_test && ./bin/promise_test
+cmake --build build --config $config --target promise_test && ./bin/promise_test "--gtest_filter=*$2"

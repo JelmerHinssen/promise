@@ -91,9 +91,9 @@ class YieldingCoroutine : public Coroutine {
         YieldingCoroutine* operator->() { return (YieldingCoroutine*) &this->m_coroutine; }
     };
 
-    template <typename R1, typename Y1>
+    template <typename R1>
     struct Awaiter {
-        Promise<R1, Y1> callee;
+        Promise<R1, Y> callee;
         Handle caller;
         bool await_ready() {
             callee->start();
@@ -109,9 +109,23 @@ class YieldingCoroutine : public Coroutine {
         }
     };
 
+    template <typename R1>
+    Awaiter<R1> await_transform(Promise<R1, Y>&& callee) {
+        return {std::move(callee), {*this}};
+    }
     template <typename R1, typename Y1>
-    Awaiter<R1, Y1> await_transform(Promise<R1, Y1>&& caller) {
-        return {std::move(caller), {*this}};
+    Awaiter<R1> await_transform(Promise<R1, Y1>&& callee) {
+        auto convert_types = [](Promise<R1, Y1>&& callee) -> Promise<R1, Y> {
+            callee->start();
+            while (!callee->done()) {
+                if (callee->yielded_value()) {
+                    co_yield callee->yielded_value();
+                }
+                callee->resume();
+            }
+            co_return *(callee->returned_value());
+        };
+        return await_transform(convert_types(std::move(callee)));
     }
     bool wait_for(Handle& h) {
         if (h->done()) {
@@ -155,7 +169,7 @@ class ReturnValue {
 template <>
 class ReturnValue<void> {
    public:
-    void return_void() { m_return_value = true; }
+    void return_void() { m_return_value.set(); }
 
    protected:
     optional<void> m_return_value{};

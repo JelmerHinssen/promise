@@ -71,6 +71,19 @@ class PromiseTest : public testing::Test {
         function_counts[AWAIT_RETURNING_1]++;
         co_return x + 1;
     }
+    Promise<void, int> yield_range(int max) {
+        for (int i = 0; i < max; i++) {
+            co_yield i;
+        }
+    }
+    Promise<void, long long> yield_things(int max) {
+        co_await yield_range(max);
+        co_yield 0x123456789ABCDEF;
+    }
+    Promise<void, long long> nested_multiple() {
+        co_await yield_things(10);
+        co_await nested_yielding();
+    }
 };
 
 TEST_F(PromiseTest, emptyCoroutine) {
@@ -235,4 +248,22 @@ TEST_F(PromiseTest, nestedYieldingCoroutine) {
     EXPECT_TRUE(p->returned_value());
     EXPECT_FALSE(p->yielded_value());
     EXPECT_FALSE(p->yielded());
+}
+
+TEST_F(PromiseTest, deepNested) {
+    auto p = nested_multiple();
+    p->start();
+    for (int i = 0; i < 10; i++) {
+        EXPECT_TRUE(p->yielded());
+        EXPECT_EQ(p->yielded_value(), i);
+        p->resume();
+    }
+    EXPECT_TRUE(p->yielded());
+    EXPECT_EQ(p->yielded_value(), 0x123456789ABCDEF);
+    p->resume();
+    EXPECT_EQ(p->yielded_value(), 5);
+    p->resume();
+    EXPECT_EQ(p->yielded_value(), 5);
+    p->resume();
+    EXPECT_TRUE(p->done());
 }
