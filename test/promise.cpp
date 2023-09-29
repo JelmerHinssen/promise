@@ -23,6 +23,8 @@ class PromiseTest : public testing::Test {
         NESTED_YIELDING_0,
         NESTED_YIELDING_1,
         NESTED_YIELDING_2,
+        AWAIT_RETURNING_0,
+        AWAIT_RETURNING_1,
         FUNCTION_COUNT
     };
 
@@ -62,6 +64,12 @@ class PromiseTest : public testing::Test {
         co_await yielding_co();
         function_counts[NESTED_YIELDING_2]++;
         co_return;
+    }
+    Promise<int, void> await_returning() {
+        function_counts[AWAIT_RETURNING_0]++;
+        int x = co_await empty_returning();
+        function_counts[AWAIT_RETURNING_1]++;
+        co_return x + 1;
     }
 };
 
@@ -172,6 +180,22 @@ TEST_F(PromiseTest, nestedCoroutine) {
     EXPECT_TRUE(p->started());
     EXPECT_TRUE(p->done());
     EXPECT_TRUE(p->returned_value());
+    EXPECT_FALSE(p->yielded_value());
+    EXPECT_FALSE(p->yielded());
+}
+
+TEST_F(PromiseTest, coawaitReturning) {
+    auto p = await_returning();
+    p->start();
+    expected_counts[AWAIT_RETURNING_0]++;
+    expected_counts[EMPTY_RETURNING]++;
+    expected_counts[AWAIT_RETURNING_1]++;
+    EXPECT_EQ(function_counts, expected_counts);
+    EXPECT_EQ(living.size(), 1);
+    EXPECT_TRUE(p->started());
+    EXPECT_TRUE(p->done());
+    EXPECT_TRUE(p->returned_value());
+    EXPECT_EQ(p->returned_value(), 2);
     EXPECT_FALSE(p->yielded_value());
     EXPECT_FALSE(p->yielded());
 }

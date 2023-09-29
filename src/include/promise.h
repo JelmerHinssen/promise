@@ -97,8 +97,8 @@ class YieldingCoroutine : public Coroutine {
         Handle caller;
         bool await_ready() {
             callee->start();
-            bool should_supsend = !callee->done();
-            return !should_supsend;
+            bool should_suspend = !callee->done();
+            return !should_suspend;
         }
 
         bool await_suspend([[maybe_unused]] auto caller_handle) {
@@ -110,8 +110,9 @@ class YieldingCoroutine : public Coroutine {
         }
         R1 await_resume() {
             if constexpr (!std::is_void_v<R1>) {
-                if (!this->return_value()) throw std::runtime_error("Function did not return a value");
-                return *this->return_value();
+                if (!callee->returned_value()) throw std::runtime_error("Function did not return a value");
+                R1 ans = *callee->returned_value();
+                return ans;
             }
         }
     };
