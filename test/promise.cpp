@@ -1,6 +1,9 @@
+// clang-format off
 #include <gtest/gtest.h>
-#include <array>
 #include "promise.h"
+// clang-format on
+
+#include <array>
 
 using namespace promise;
 using namespace std;
@@ -8,7 +11,7 @@ using namespace std;
 static auto& living = promise::Coroutine::living;
 
 class PromiseTest : public testing::Test {
-public:
+   public:
     enum FunctionNames {
         EMPTY_CO,
         EMPTY_RETURNING,
@@ -26,21 +29,17 @@ public:
     array<int, FUNCTION_COUNT> function_counts = {};
     array<int, FUNCTION_COUNT> expected_counts = {};
 
-    PromiseTest() {
-        living.clear();
-    }
-    ~PromiseTest() {
-        EXPECT_TRUE(living.empty());
-    }
-    Promise<void> empty_co (){
+    PromiseTest() { living.clear(); }
+    ~PromiseTest() { EXPECT_TRUE(living.empty()); }
+    Promise<void> empty_co() {
         function_counts[EMPTY_CO]++;
         co_return;
     }
-    Promise<int> empty_returning (){
+    Promise<int> empty_returning() {
         function_counts[EMPTY_RETURNING]++;
         co_return 1;
     }
-    Promise<int> conditional_returning (bool b) {
+    Promise<int> conditional_returning(bool b) {
         function_counts[CONDITIONAL_RETURNING]++;
         if (b) co_return 1;
     }
@@ -210,6 +209,6 @@ TEST_F(PromiseTest, nestedYieldingCoroutine) {
     EXPECT_TRUE(p->started());
     EXPECT_TRUE(p->done());
     EXPECT_TRUE(p->returned_value());
-    EXPECT_EQ(p->yielded_value(), 5); // ?
+    EXPECT_EQ(p->yielded_value(), 5);  // ?
     EXPECT_FALSE(p->yielded());
 }

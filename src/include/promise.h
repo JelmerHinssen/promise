@@ -4,6 +4,7 @@
 #include <coroutine>
 #include <type_traits>
 #include <unordered_set>
+#include <stdexcept>
 
 #include "optional.h"
 
@@ -50,6 +51,7 @@ class Coroutine {
     class Handle {
        public:
         Handle(Coroutine& handle) : m_coroutine(handle) { m_coroutine.gain_ref(); }
+        Handle(const Handle& handle) : Handle(handle.m_coroutine) {}
         ~Handle() { m_coroutine.lose_ref(); }
         const Coroutine* operator->() const { return &m_coroutine; }
         Coroutine* operator->() { return &m_coroutine; }
@@ -79,10 +81,7 @@ class YieldingCoroutine : public Coroutine {
         m_yielded = true;
         return {};
     }
-    template <typename R>
-    auto await_transform(Promise<R, Y>&& r) {
-        return r;
-    }
+
     optional<Y> yielded_value() const noexcept { return m_yield_value; }
 
     class Handle : public Coroutine::Handle {
@@ -92,7 +91,35 @@ class YieldingCoroutine : public Coroutine {
         YieldingCoroutine* operator->() { return (YieldingCoroutine*) &this->m_coroutine; }
     };
 
-    optional<Handle> calling{};
+    template <typename R1, typename Y1>
+    struct Awaiter {
+        Promise<R1, Y1> callee;
+        Handle caller;
+        bool await_ready() {
+            callee->start();
+            bool should_supsend = !callee->done();
+            return !should_supsend;
+        }
+
+        bool await_suspend([[maybe_unused]] auto caller_handle) {
+            bool should_suspend = true;
+            if (callee->yielded()) {
+                caller->yield_value(callee->yielded_value());
+            }
+            return should_suspend;
+        }
+        R1 await_resume() {
+            if constexpr (!std::is_void_v<R1>) {
+                if (!this->return_value()) throw std::runtime_error("Function did not return a value");
+                return *this->return_value();
+            }
+        }
+    };
+
+    template <typename R1, typename Y1>
+    Awaiter<R1, Y1> await_transform(Promise<R1, Y1>&& caller) {
+        return {std::move(caller), {*this}};
+    }
 
    protected:
    private:
@@ -142,21 +169,8 @@ class Promise : public ReturningCoroutine<R, Y>::Handle {
    public:
     Promise(ReturningCoroutine<R, Y>& handle) : ReturningCoroutine<R, Y>::Handle(handle) {}
     using promise_type = ReturningCoroutine<R, Y>;
-    bool await_ready() {
-        this->m_coroutine.start();
-        bool should_supsend = !this->m_coroutine.done();
-        return !should_supsend;
-    }
-    bool await_suspend([[maybe_unused]] auto handle) {
-        bool should_suspend = true;
-        return should_suspend;
-    }
-    R await_resume() {
-        if constexpr (!std::is_void_v<R>) {
-            if (!this->return_value()) throw std::runtime_error("Function did not return a value");
-            return *this->return_value();
-        }
-    }
+
+   private:
 };
 
 template <typename R, typename Y>
