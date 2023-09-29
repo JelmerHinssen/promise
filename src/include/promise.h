@@ -105,10 +105,11 @@ class YieldingCoroutine : public Coroutine {
         YieldingCoroutine* operator->() { return (YieldingCoroutine*) &this->m_coroutine; }
     };
 
+    optional<Handle> calling{};
+
+   protected:
    private:
-    optional<Y> m_yield_value;
-    template <typename R, typename Y1>
-    friend class Promise;
+    optional<Y> m_yield_value{};
 };
 
 namespace detail {
@@ -122,9 +123,7 @@ class ReturnValue {
     }
 
    protected:
-    optional<R> m_return_value;
-    template <typename R1, typename Y>
-    friend class Promise;
+    optional<R> m_return_value{};
 };
 
 template <>
@@ -133,7 +132,7 @@ class ReturnValue<void> {
     void return_void() { m_return_value = true; }
 
    protected:
-    optional<void> m_return_value;
+    optional<void> m_return_value{};
 };
 
 }  // namespace detail
@@ -143,7 +142,6 @@ class ReturningCoroutine : public YieldingCoroutine<Y>, public detail::ReturnVal
    public:
     Promise<R, Y> get_return_object();
     optional<R> returned_value() const noexcept { return this->m_return_value; }
-
     class Handle : public YieldingCoroutine<Y>::Handle {
        public:
         Handle(ReturningCoroutine& handle) : YieldingCoroutine<Y>::Handle(handle) {}
