@@ -2,9 +2,10 @@
 #include <cassert>
 #include <concepts>
 #include <coroutine>
-#include <optional>
 #include <type_traits>
 #include <unordered_set>
+
+#include "optional.h"
 
 namespace promise {
 
@@ -12,20 +13,6 @@ template <typename T>
 class SuspensionPoint;
 template <typename R, typename Y>
 class Promise;
-
-namespace detail {
-template <typename T>
-struct promise_helper {
-    using type = std::optional<T>;
-};
-template <>
-struct promise_helper<void> {
-    using type = bool;
-};
-}  // namespace detail
-
-template <typename T>
-using optional = detail::promise_helper<T>::type;
 
 class Coroutine {
    public:
