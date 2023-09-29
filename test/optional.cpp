@@ -6,16 +6,6 @@
 
 using namespace promise;
 
-TEST(Optional, emptyVoid) {
-    optional<void> x{};
-    EXPECT_FALSE(x);
-}
-
-TEST(Optional, nonEmptyVoid) {
-    optional<void> x = true;
-    EXPECT_TRUE(x);
-}
-
 TEST(Optional, emptyInt) {
     optional<int> x{};
     EXPECT_FALSE(x);
@@ -172,4 +162,34 @@ TEST(Optional, replaceReference) {
     EXPECT_EQ(*x, 3);
     z = 2;
     EXPECT_EQ(*x, 2);
+}
+
+TEST(OptionalVoid, empty) {
+    optional<void> x{};
+    EXPECT_FALSE(x);
+}
+
+TEST(OptionalVoid, nonEmpty) {
+    optional<void> x{true};
+    EXPECT_TRUE(x);
+}
+
+TEST(OptionalVoid, set) {
+    optional<void> x{};
+    x.set();
+    EXPECT_TRUE(x);
+}
+
+TEST(OptionalVoid, reset) {
+    optional<void> x{true};
+    x.reset();
+    EXPECT_FALSE(x);
+}
+
+TEST(OptionalVoid, dereference) {
+    auto f = []() {
+        optional<void> v{true};
+        return *v;
+    };
+    EXPECT_NO_THROW(f());
 }

@@ -6,39 +6,30 @@ namespace promise {
 
 namespace detail {
 
-template <typename T>
-concept is_assignable = std::is_move_assignable_v<T> || std::is_copy_assignable_v<T>;
-template <typename T>
-concept is_not_assignable = !is_assignable<T>;
+template <typename T> concept is_assignable = std::is_move_assignable_v<T> || std::is_copy_assignable_v<T>;
+template <typename T> concept is_not_assignable = !is_assignable<T>;
 
-template <typename T>
-struct optional_helper;
+template <typename T> struct optional_helper;
 
-template <is_assignable T>
-struct optional_helper<T> {
+template <is_assignable T> struct optional_helper<T> {
     using type = std::optional<T>;
 };
 }  // namespace detail
-template <typename T>
-using optional = detail::optional_helper<T>::type;
+template <typename T> using optional = detail::optional_helper<T>::type;
 
 namespace detail {
 
-template <typename T, typename Ref>
-class inplace_optional;
+template <typename T, typename Ref> class inplace_optional;
+class optional_void;
 
-template <typename T>
-struct is_optional : public std::bool_constant<false> {};
-template <typename T>
-constexpr bool is_optional_v = is_optional<T>::value;
+template <typename T> struct is_optional : public std::bool_constant<false> {};
+template <typename T> constexpr bool is_optional_v = is_optional<T>::value;
 
-template <typename T>
-struct is_optional<std::optional<T>> : public std::bool_constant<true> {};
-template <typename T, typename R>
-struct is_optional<inplace_optional<T, R>> : public std::bool_constant<true> {};
+template <typename T> struct is_optional<std::optional<T>> : public std::bool_constant<true> {};
+template <typename T, typename R> struct is_optional<inplace_optional<T, R>> : public std::bool_constant<true> {};
+template <> struct is_optional<optional_void> : public std::bool_constant<true> {};
 
-template <typename T, typename Ref = T>
-class inplace_optional {
+template <typename T, typename Ref = T> class inplace_optional {
    public:
     struct Dummy {
         constexpr Dummy() noexcept {}
@@ -61,14 +52,12 @@ class inplace_optional {
     const Ref& operator*() const& { return m_value; }
     const Ref* operator->() const { return &m_value; }
     Ref&& operator*() && { return std::move(m_value); }
-    template <typename... Args>
-    void assign(Args&&... args) {
+    template <typename... Args> void assign(Args&&... args) {
         reset();
         new (&m_value) T(std::forward<Args>(args)...);
         m_has_value = true;
     }
-    template <typename Arg>
-    inplace_optional& operator=(Arg&& arg) && {
+    template <typename Arg> inplace_optional& operator=(Arg&& arg) && {
         assign(std::forward<Arg>(arg));
         return *this;
     }
@@ -86,12 +75,16 @@ class inplace_optional {
         m_has_value = false;
     }
     template <typename S>
-    bool operator==(const S& other) const requires (is_optional_v<S>) {
+    bool operator==(const S& other) const
+        requires(is_optional_v<S>)
+    {
         if (has_value() && other.has_value()) return **this == *other;
         return has_value() == other.has_value();
     }
     template <typename S>
-    bool operator==(const S& other) const requires (!is_optional_v<S>) {
+    bool operator==(const S& other) const
+        requires(!is_optional_v<S>)
+    {
         if (has_value()) return **this == other;
         return false;
     }
@@ -102,12 +95,37 @@ class inplace_optional {
     }
 };
 
-template <is_not_assignable T>
-struct optional_helper<T> {
+class optional_void {
+   public:
+    bool has_value() const noexcept { return m_has_value; }
+    explicit operator bool() const noexcept { return m_has_value; }
+    bool operator!() { return !m_has_value; }
+    void operator*() {}
+    void* operator->() { return this; }
+    void reset() { m_has_value = false; }
+    explicit optional_void(bool filled = false) : m_has_value(filled) {}
+    void set() { m_has_value = true; }
+    optional_void& operator=(const optional_void& other) {
+        m_has_value = other.has_value();
+        return *this;
+    }
+    bool operator==(const optional_void& other) const noexcept = default;
+    auto operator<=>(const optional_void& other) const noexcept = default;
+    template <typename S>
+    bool operator==(const S& other) const
+        requires(is_optional_v<S>)
+    {
+        return !(has_value() || other.has_value());
+    }
+
+   private:
+    bool m_has_value;
+};
+
+template <is_not_assignable T> struct optional_helper<T> {
     using type = inplace_optional<T>;
 };
-template <typename T>
-struct optional_helper<T&> {
+template <typename T> struct optional_helper<T&> {
     struct Reference {
         T& ref;
         operator T&() { return ref; }
@@ -115,9 +133,8 @@ struct optional_helper<T&> {
     };
     using type = inplace_optional<Reference, T>;
 };
-template <>
-struct optional_helper<void> {
-    using type = bool;
+template <> struct optional_helper<void> {
+    using type = optional_void;
 };
 }  // namespace detail
 
