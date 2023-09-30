@@ -18,6 +18,10 @@ struct YieldNothing {
     explicit YieldNothing() = default;
 } const nothing;
 
+namespace detail {
+class WaitObject;
+}
+
 class Coroutine {
    public:
     Coroutine();
@@ -54,6 +58,7 @@ class Coroutine {
         std::function<void()> update_yield_value;
     };
     optional<YieldingHandle> calling{};
+    detail::WaitObject* m_wait_object{};
 
    private:
     void gain_ref();
@@ -86,9 +91,8 @@ template <typename Y> class YieldingCoroutine : public Coroutine {
 
     template <typename R1, typename Y1> struct Awaiter {
         Promise<R1, Y1> callee;
-        Handle caller;
         bool await_ready();
-        void await_suspend([[maybe_unused]] auto caller_handle) {}
+        void await_suspend(auto caller_handle);
         R1 await_resume();
     };
     using Coroutine::await_transform;  // Necessary to find await_transform(SuspensionPoint<T>)
@@ -153,6 +157,7 @@ class WaitObject {
    protected:
     optional<Handle> m_handle;
 };
+
 template <typename T> class ResumeSuspension : public WaitObject {
    public:
     using Handle = Coroutine::Handle;
@@ -198,10 +203,9 @@ template <typename T> class SuspensionPoint : public detail::ResumeSuspension<T>
 
 }  // namespace promise
 
-
 // Definitions
 namespace promise {
-    inline Coroutine::Coroutine() : m_handle(std::coroutine_handle<Coroutine>::from_promise(*this)) {
+inline Coroutine::Coroutine() : m_handle(std::coroutine_handle<Coroutine>::from_promise(*this)) {
 #ifdef TEST
     auto it = living.find(this);
     EXPECT_EQ(it, living.end());
@@ -217,12 +221,14 @@ inline Coroutine::~Coroutine() {
 }
 inline void Coroutine::start() {
     m_started = true;
-    m_handle.resume();
+    resume();
 }
 
 inline void Coroutine::resume() {
+    Handle keep_alive(*this);
+    m_yielded = false;
+    m_wait_object = nullptr;
     if (!calling || (calling->handle->resume(), wait_for_calling())) {
-        m_yielded = false;
         m_handle.resume();
     }
 }
@@ -234,11 +240,16 @@ inline bool Coroutine::wait_for_calling() {
     if (calling->handle->yielded()) {
         calling->update_yield_value();
     }
+    if (calling->handle->m_wait_object) {
+        calling->handle->m_wait_object->update_handle({*this});
+        m_wait_object = calling->handle->m_wait_object;
+    }
     return false;
 }
 
 template <typename T> SuspensionPoint<T>& Coroutine::await_transform(SuspensionPoint<T>& s) {
     s.set_handle({*this});
+    m_wait_object = &s;
     return s;
 }
 
@@ -268,10 +279,19 @@ template <typename Y> optional<Y> YieldingCoroutine<Y>::yielded_value() const no
 }
 template <typename Y> template <typename R1, typename Y1> bool YieldingCoroutine<Y>::Awaiter<R1, Y1>::await_ready() {
     callee->start();
-    std::move(caller->calling) =
-        YieldingHandle{callee, [*this]() mutable { caller->yield_value(callee->yielded_value()); }};
-    return caller->wait_for_calling();
+    
+    return callee->done();
 }
+
+template <typename Y>
+template <typename R1, typename Y1>
+void YieldingCoroutine<Y>::Awaiter<R1, Y1>::await_suspend(auto caller_handle) {
+    auto& caller = caller_handle.promise();
+    std::move(caller.calling) =
+        YieldingHandle{callee, [&, *this]() { caller.yield_value(callee->yielded_value()); }};
+    caller.wait_for_calling();
+}
+
 template <typename Y> template <typename R1, typename Y1> R1 YieldingCoroutine<Y>::Awaiter<R1, Y1>::await_resume() {
     if constexpr (!std::is_void_v<R1>) {
         if (!callee->returned_value()) throw std::runtime_error("Function did not return a value");
@@ -283,7 +303,7 @@ template <typename Y> template <typename R1, typename Y1> R1 YieldingCoroutine<Y
 template <typename Y>
 template <typename R1, typename Y1>
 YieldingCoroutine<Y>::Awaiter<R1, Y1> YieldingCoroutine<Y>::await_transform(Promise<R1, Y1>&& callee) {
-    return {std::move(callee), {*this}};
+    return {std::move(callee)};
 }
 
-}
+}  // namespace promise
