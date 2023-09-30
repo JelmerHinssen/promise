@@ -48,18 +48,6 @@ class Coroutine {
         m_handle.resume();
     }
 
-    class Handle {
-       public:
-        Handle(Coroutine& handle) : m_coroutine(handle) { m_coroutine.gain_ref(); }
-        Handle(const Handle& handle) : Handle(handle.m_coroutine) {}
-        ~Handle() { m_coroutine.lose_ref(); }
-        const Coroutine* operator->() const { return &m_coroutine; }
-        Coroutine* operator->() { return &m_coroutine; }
-
-       protected:
-        Coroutine& m_coroutine;
-    };
-
     void resume() {
         if (!calling || (calling->handle->resume(), wait_for_calling())) {
             m_yielded = false;
@@ -76,6 +64,23 @@ class Coroutine {
         }
         return false;
     }
+
+    template <typename T> SuspensionPoint<T>& await_transform(SuspensionPoint<T>& s) {
+        s.set_handle({*this});
+        return s;
+    }
+
+    class Handle {
+       public:
+        Handle(Coroutine& handle) : m_coroutine(handle) { m_coroutine.gain_ref(); }
+        Handle(const Handle& handle) : Handle(handle.m_coroutine) {}
+        ~Handle() { m_coroutine.lose_ref(); }
+        const Coroutine* operator->() const { return &m_coroutine; }
+        Coroutine* operator->() { return &m_coroutine; }
+
+       protected:
+        Coroutine& m_coroutine;
+    };
 
    protected:
     bool m_yielded = false;
@@ -94,6 +99,10 @@ class Coroutine {
     std::coroutine_handle<Coroutine> m_handle;
     int ref_count = 0;
 };
+
+template <typename T, typename Y>
+concept compatible_yield_type = requires(T&& arg, optional<Y>& y) { y = std::forward<T>(arg); };
+
 template <typename Y> class YieldingCoroutine : public Coroutine {
    public:
     std::suspend_always yield_value(const YieldNothing&) {
@@ -101,11 +110,11 @@ template <typename Y> class YieldingCoroutine : public Coroutine {
         m_yielded = true;
         return {};
     }
-    std::suspend_always yield_value(optional<void>&&) {
-        return yield_value(nothing);
-    }
+
+    std::suspend_always yield_value(optional<void>&&) { return yield_value(nothing); }
     template <typename T> std::suspend_always yield_value(T&& arg) {
-        m_yield_value = std::forward<T>(arg);
+        static_assert(compatible_yield_type<T, Y>, "Given yield value is not compatible with yield type of coroutine");
+        if constexpr (compatible_yield_type<T, Y>) m_yield_value = std::forward<T>(arg);
         m_yielded = true;
         return {};
     }
@@ -142,7 +151,7 @@ template <typename Y> class YieldingCoroutine : public Coroutine {
             }
         }
     };
-
+    using Coroutine::await_transform;  // Necessary to find await_transform(SuspensionPoint<T>)
     template <typename R1, typename Y1> Awaiter<R1, Y1> await_transform(Promise<R1, Y1>&& callee) {
         return {std::move(callee), {*this}};
     }
@@ -194,5 +203,60 @@ template <typename R, typename Y = void> class Promise : public ReturningCorouti
 };
 
 template <typename R, typename Y> Promise<R, Y> ReturningCoroutine<R, Y>::get_return_object() { return {*this}; }
+
+namespace detail {
+class WaitObject {
+   public:
+    using Handle = Coroutine::Handle;
+    void update_handle(Handle h) {
+        assert(m_handle);
+        std::move(m_handle) = h;
+    }
+
+   protected:
+    optional<Handle> m_handle;
+};
+template <typename T> class ResumeSuspension : public WaitObject {
+   public:
+    using Handle = Coroutine::Handle;
+    void resume(T v) {
+        std::move(m_msg) = v;
+        (*m_handle)->resume();
+    }
+
+   protected:
+    optional<T> m_msg;
+};
+template <> class ResumeSuspension<void> : public WaitObject {
+   public:
+    using Handle = Coroutine::Handle;
+    void resume() {
+        m_msg.set();
+        (*m_handle)->resume();
+    }
+
+   protected:
+    optional<void> m_msg;
+};
+}  // namespace detail
+
+template <typename T> class SuspensionPoint : public detail::ResumeSuspension<T> {
+   public:
+    using Handle = Coroutine::Handle;
+    using detail::ResumeSuspension<T>::m_msg;
+    using detail::ResumeSuspension<T>::m_handle;
+    bool await_ready() { return false; }
+    void await_suspend(auto) {}
+    T await_resume() {
+        assert(m_msg);
+        m_handle.reset();
+        return *m_msg;
+    }
+    void set_handle(Handle h) {
+        assert(!m_handle);
+        std::move(m_handle) = h;
+        m_msg.reset();
+    }
+};
 
 }  // namespace promise
