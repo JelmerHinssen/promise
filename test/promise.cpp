@@ -84,6 +84,19 @@ class PromiseTest : public testing::Test {
         co_await yield_things(10);
         co_await nested_yielding();
     }
+    Promise<void, void> yield_void() {
+        co_yield nothing;
+    }
+    Promise<void, int> yield_void_in_int() {
+        co_yield 1;
+        co_yield nothing;
+        co_yield 0;
+    }
+    Promise<void, int> yield_void_combined() {
+        co_yield 1;
+        co_await yield_void();
+        co_yield 0;
+    }
 };
 
 TEST_F(PromiseTest, emptyCoroutine) {
@@ -264,6 +277,45 @@ TEST_F(PromiseTest, deepNested) {
     EXPECT_EQ(p->yielded_value(), 5);
     p->resume();
     EXPECT_EQ(p->yielded_value(), 5);
+    p->resume();
+    EXPECT_TRUE(p->done());
+}
+
+TEST_F(PromiseTest, yieldVoid) {
+    auto p = yield_void();
+    p->start();
+    EXPECT_TRUE(p->yielded());
+    EXPECT_FALSE(p->yielded_value());
+    p->resume();
+    EXPECT_TRUE(p->done());
+}
+
+TEST_F(PromiseTest, yieldVoidInInt) {
+    auto p = yield_void_in_int();
+    p->start();
+    EXPECT_TRUE(p->yielded());
+    EXPECT_EQ(p->yielded_value(), 1);
+    p->resume();
+    EXPECT_TRUE(p->yielded());
+    EXPECT_FALSE(p->yielded_value());
+    p->resume();
+    EXPECT_TRUE(p->yielded());
+    EXPECT_EQ(p->yielded_value(), 0);
+    p->resume();
+    EXPECT_TRUE(p->done());
+}
+
+TEST_F(PromiseTest, yieldVoidCombined) {
+    auto p = yield_void_combined();
+    p->start();
+    EXPECT_TRUE(p->yielded());
+    EXPECT_EQ(p->yielded_value(), 1);
+    p->resume();
+    EXPECT_TRUE(p->yielded());
+    EXPECT_FALSE(p->yielded_value());
+    p->resume();
+    EXPECT_TRUE(p->yielded());
+    EXPECT_EQ(p->yielded_value(), 0);
     p->resume();
     EXPECT_TRUE(p->done());
 }

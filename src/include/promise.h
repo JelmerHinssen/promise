@@ -14,6 +14,10 @@ namespace promise {
 template <typename T> class SuspensionPoint;
 template <typename R, typename Y> class Promise;
 
+struct YieldNothing {
+    explicit YieldNothing() = default;
+} const nothing;
+
 class Coroutine {
    public:
     std::suspend_always initial_suspend() const noexcept { return {}; }
@@ -92,6 +96,14 @@ class Coroutine {
 };
 template <typename Y> class YieldingCoroutine : public Coroutine {
    public:
+    std::suspend_always yield_value(const YieldNothing&) {
+        m_yield_value.reset();
+        m_yielded = true;
+        return {};
+    }
+    std::suspend_always yield_value(optional<void>&&) {
+        return yield_value(nothing);
+    }
     template <typename T> std::suspend_always yield_value(T&& arg) {
         m_yield_value = std::forward<T>(arg);
         m_yielded = true;
@@ -117,7 +129,8 @@ template <typename Y> class YieldingCoroutine : public Coroutine {
         Handle caller;
         bool await_ready() {
             callee->start();
-            std::move(caller->calling) = YieldingHandle{callee, [*this]() mutable { caller->yield_value(callee->yielded_value()); }};
+            std::move(caller->calling) =
+                YieldingHandle{callee, [*this]() mutable { caller->yield_value(callee->yielded_value()); }};
             return caller->wait_for_calling();
         }
         void await_suspend([[maybe_unused]] auto caller_handle) {}
