@@ -20,55 +20,18 @@ struct YieldNothing {
 
 class Coroutine {
    public:
-    std::suspend_always initial_suspend() const noexcept { return {}; }
-    std::suspend_always final_suspend() const noexcept { return {}; }
-    void unhandled_exception() {}
-#ifdef TEST
-    inline static std::unordered_set<const Coroutine*> living = {};
-#endif
-    Coroutine() : m_handle(std::coroutine_handle<Coroutine>::from_promise(*this)) {
-#ifdef TEST
-        auto it = living.find(this);
-        EXPECT_EQ(it, living.end());
-        living.insert(this);
-#endif
-    }
-#ifdef TEST
-    ~Coroutine() {
-        auto it = living.find(this);
-        EXPECT_NE(it, living.end());
-        living.erase(this);
-    }
-#endif
+    Coroutine();
+    ~Coroutine();
     bool done() const noexcept { return m_handle.done(); }
     bool started() const noexcept { return m_started; }
     bool yielded() const noexcept { return m_yielded; }
-    void start() {
-        m_started = true;
-        m_handle.resume();
-    }
+    void start();
+    void resume();
 
-    void resume() {
-        if (!calling || (calling->handle->resume(), wait_for_calling())) {
-            m_yielded = false;
-            m_handle.resume();
-        }
-    }
-    bool wait_for_calling() {
-        if (calling->handle->done()) {
-            calling.reset();
-            return true;
-        };
-        if (calling->handle->yielded()) {
-            calling->update_yield_value();
-        }
-        return false;
-    }
-
-    template <typename T> SuspensionPoint<T>& await_transform(SuspensionPoint<T>& s) {
-        s.set_handle({*this});
-        return s;
-    }
+    std::suspend_always initial_suspend() const noexcept { return {}; }
+    std::suspend_always final_suspend() const noexcept { return {}; }
+    void unhandled_exception() {}
+    template <typename T> SuspensionPoint<T>& await_transform(SuspensionPoint<T>& s);
 
     class Handle {
        public:
@@ -83,6 +46,7 @@ class Coroutine {
     };
 
    protected:
+    bool wait_for_calling();
     bool m_yielded = false;
     bool m_started = false;
     struct YieldingHandle {
@@ -92,13 +56,60 @@ class Coroutine {
     optional<YieldingHandle> calling{};
 
    private:
-    void gain_ref() { ref_count++; }
-    void lose_ref() {
-        if (!--ref_count) m_handle.destroy();
-    }
+    void gain_ref();
+    void lose_ref();
     std::coroutine_handle<Coroutine> m_handle;
-    int ref_count = 0;
+    int m_ref_count = 0;
+#ifdef TEST
+   public:
+    inline static std::unordered_set<const Coroutine*> living = {};
+#endif
 };
+inline Coroutine::Coroutine() : m_handle(std::coroutine_handle<Coroutine>::from_promise(*this)) {
+#ifdef TEST
+    auto it = living.find(this);
+    EXPECT_EQ(it, living.end());
+    living.insert(this);
+#endif
+}
+inline Coroutine::~Coroutine() {
+#ifdef TEST
+    auto it = living.find(this);
+    EXPECT_NE(it, living.end());
+    living.erase(this);
+#endif
+}
+inline void Coroutine::start() {
+    m_started = true;
+    m_handle.resume();
+}
+
+inline void Coroutine::resume() {
+    if (!calling || (calling->handle->resume(), wait_for_calling())) {
+        m_yielded = false;
+        m_handle.resume();
+    }
+}
+inline bool Coroutine::wait_for_calling() {
+    if (calling->handle->done()) {
+        calling.reset();
+        return true;
+    };
+    if (calling->handle->yielded()) {
+        calling->update_yield_value();
+    }
+    return false;
+}
+
+template <typename T> SuspensionPoint<T>& Coroutine::await_transform(SuspensionPoint<T>& s) {
+    s.set_handle({*this});
+    return s;
+}
+
+inline void Coroutine::gain_ref() { m_ref_count++; }
+inline void Coroutine::lose_ref() {
+    if (!--m_ref_count) m_handle.destroy();
+}
 
 template <typename T, typename Y>
 concept compatible_yield_type = requires(T&& arg, optional<Y>& y) { y = std::forward<T>(arg); };
