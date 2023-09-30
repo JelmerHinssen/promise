@@ -65,77 +65,17 @@ class Coroutine {
     inline static std::unordered_set<const Coroutine*> living = {};
 #endif
 };
-inline Coroutine::Coroutine() : m_handle(std::coroutine_handle<Coroutine>::from_promise(*this)) {
-#ifdef TEST
-    auto it = living.find(this);
-    EXPECT_EQ(it, living.end());
-    living.insert(this);
-#endif
-}
-inline Coroutine::~Coroutine() {
-#ifdef TEST
-    auto it = living.find(this);
-    EXPECT_NE(it, living.end());
-    living.erase(this);
-#endif
-}
-inline void Coroutine::start() {
-    m_started = true;
-    m_handle.resume();
-}
-
-inline void Coroutine::resume() {
-    if (!calling || (calling->handle->resume(), wait_for_calling())) {
-        m_yielded = false;
-        m_handle.resume();
-    }
-}
-inline bool Coroutine::wait_for_calling() {
-    if (calling->handle->done()) {
-        calling.reset();
-        return true;
-    };
-    if (calling->handle->yielded()) {
-        calling->update_yield_value();
-    }
-    return false;
-}
-
-template <typename T> SuspensionPoint<T>& Coroutine::await_transform(SuspensionPoint<T>& s) {
-    s.set_handle({*this});
-    return s;
-}
-
-inline void Coroutine::gain_ref() { m_ref_count++; }
-inline void Coroutine::lose_ref() {
-    if (!--m_ref_count) m_handle.destroy();
-}
 
 template <typename T, typename Y>
 concept compatible_yield_type = requires(T&& arg, optional<Y>& y) { y = std::forward<T>(arg); };
 
 template <typename Y> class YieldingCoroutine : public Coroutine {
    public:
-    std::suspend_always yield_value(const YieldNothing&) {
-        m_yield_value.reset();
-        m_yielded = true;
-        return {};
-    }
-
+    std::suspend_always yield_value(const YieldNothing&);
     std::suspend_always yield_value(optional<void>&&) { return yield_value(nothing); }
-    template <typename T> std::suspend_always yield_value(T&& arg) {
-        static_assert(compatible_yield_type<T, Y>, "Given yield value is not compatible with yield type of coroutine");
-        if constexpr (compatible_yield_type<T, Y>) m_yield_value = std::forward<T>(arg);
-        m_yielded = true;
-        return {};
-    }
+    template <typename T> std::suspend_always yield_value(T&& arg);
 
-    optional<Y> yielded_value() const noexcept {
-        if (yielded())
-            return m_yield_value;
-        else
-            return {};
-    }
+    optional<Y> yielded_value() const noexcept;
 
     class Handle : public Coroutine::Handle {
        public:
@@ -147,27 +87,13 @@ template <typename Y> class YieldingCoroutine : public Coroutine {
     template <typename R1, typename Y1> struct Awaiter {
         Promise<R1, Y1> callee;
         Handle caller;
-        bool await_ready() {
-            callee->start();
-            std::move(caller->calling) =
-                YieldingHandle{callee, [*this]() mutable { caller->yield_value(callee->yielded_value()); }};
-            return caller->wait_for_calling();
-        }
+        bool await_ready();
         void await_suspend([[maybe_unused]] auto caller_handle) {}
-        R1 await_resume() {
-            if constexpr (!std::is_void_v<R1>) {
-                if (!callee->returned_value()) throw std::runtime_error("Function did not return a value");
-                R1 ans = *callee->returned_value();
-                return ans;
-            }
-        }
+        R1 await_resume();
     };
     using Coroutine::await_transform;  // Necessary to find await_transform(SuspensionPoint<T>)
-    template <typename R1, typename Y1> Awaiter<R1, Y1> await_transform(Promise<R1, Y1>&& callee) {
-        return {std::move(callee), {*this}};
-    }
+    template <typename R1, typename Y1> Awaiter<R1, Y1> await_transform(Promise<R1, Y1>&& callee);
 
-   protected:
    private:
     optional<Y> m_yield_value{};
 };
@@ -271,3 +197,93 @@ template <typename T> class SuspensionPoint : public detail::ResumeSuspension<T>
 };
 
 }  // namespace promise
+
+
+// Definitions
+namespace promise {
+    inline Coroutine::Coroutine() : m_handle(std::coroutine_handle<Coroutine>::from_promise(*this)) {
+#ifdef TEST
+    auto it = living.find(this);
+    EXPECT_EQ(it, living.end());
+    living.insert(this);
+#endif
+}
+inline Coroutine::~Coroutine() {
+#ifdef TEST
+    auto it = living.find(this);
+    EXPECT_NE(it, living.end());
+    living.erase(this);
+#endif
+}
+inline void Coroutine::start() {
+    m_started = true;
+    m_handle.resume();
+}
+
+inline void Coroutine::resume() {
+    if (!calling || (calling->handle->resume(), wait_for_calling())) {
+        m_yielded = false;
+        m_handle.resume();
+    }
+}
+inline bool Coroutine::wait_for_calling() {
+    if (calling->handle->done()) {
+        calling.reset();
+        return true;
+    };
+    if (calling->handle->yielded()) {
+        calling->update_yield_value();
+    }
+    return false;
+}
+
+template <typename T> SuspensionPoint<T>& Coroutine::await_transform(SuspensionPoint<T>& s) {
+    s.set_handle({*this});
+    return s;
+}
+
+inline void Coroutine::gain_ref() { m_ref_count++; }
+inline void Coroutine::lose_ref() {
+    if (!--m_ref_count) m_handle.destroy();
+}
+
+template <typename Y> std::suspend_always YieldingCoroutine<Y>::yield_value(const YieldNothing&) {
+    m_yield_value.reset();
+    m_yielded = true;
+    return {};
+}
+
+template <typename Y> template <typename T> std::suspend_always YieldingCoroutine<Y>::yield_value(T&& arg) {
+    static_assert(compatible_yield_type<T, Y>, "Given yield value is not compatible with yield type of coroutine");
+    if constexpr (compatible_yield_type<T, Y>) m_yield_value = std::forward<T>(arg);
+    m_yielded = true;
+    return {};
+}
+
+template <typename Y> optional<Y> YieldingCoroutine<Y>::yielded_value() const noexcept {
+    if (yielded())
+        return m_yield_value;
+    else
+        return {};
+}
+template <typename Y> template <typename R1, typename Y1> bool YieldingCoroutine<Y>::Awaiter<R1, Y1>::await_ready() {
+    callee->start();
+    std::move(caller->calling) =
+        YieldingHandle{callee, [*this]() mutable { caller->yield_value(callee->yielded_value()); }};
+    return caller->wait_for_calling();
+}
+template <typename Y> template <typename R1, typename Y1> R1 YieldingCoroutine<Y>::Awaiter<R1, Y1>::await_resume() {
+    if constexpr (!std::is_void_v<R1>) {
+        if (!callee->returned_value()) throw std::runtime_error("Function did not return a value");
+        R1 ans = *callee->returned_value();
+        return ans;
+    }
+}
+
+template <typename Y>
+template <typename R1, typename Y1>
+YieldingCoroutine<Y>::Awaiter<R1, Y1> YieldingCoroutine<Y>::await_transform(Promise<R1, Y1>&& callee) {
+    return {std::move(callee), {*this}};
+}
+
+}
