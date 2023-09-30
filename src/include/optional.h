@@ -103,7 +103,8 @@ class optional_void {
     void operator*() {}
     void* operator->() { return this; }
     void reset() { m_has_value = false; }
-    explicit optional_void(bool filled = false) : m_has_value(filled) {}
+    optional_void() : m_has_value(false) {}
+    explicit optional_void(bool filled) : m_has_value(filled) {}
     void set() { m_has_value = true; }
     optional_void& operator=(const optional_void& other) {
         m_has_value = other.has_value();

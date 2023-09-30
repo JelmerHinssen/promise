@@ -8,5 +8,5 @@
     ColumnLimit: 120,
     SpaceAfterCStyleCast: true,
     AlwaysBreakTemplateDeclarations: MultiLine,
-    BreakBeforeConceptDeclarations: Allowed
+    BreakBeforeConceptDeclarations: Allowed,
 }

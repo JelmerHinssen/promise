@@ -2,6 +2,7 @@
 #include <cassert>
 #include <concepts>
 #include <coroutine>
+#include <functional>
 #include <stdexcept>
 #include <type_traits>
 #include <unordered_set>
@@ -10,10 +11,8 @@
 
 namespace promise {
 
-template <typename T>
-class SuspensionPoint;
-template <typename R, typename Y>
-class Promise;
+template <typename T> class SuspensionPoint;
+template <typename R, typename Y> class Promise;
 
 class Coroutine {
    public:
@@ -44,10 +43,7 @@ class Coroutine {
         m_started = true;
         m_handle.resume();
     }
-    void resume() {
-        m_yielded = false;
-        m_handle.resume();
-    }
+
     class Handle {
        public:
         Handle(Coroutine& handle) : m_coroutine(handle) { m_coroutine.gain_ref(); }
@@ -60,9 +56,31 @@ class Coroutine {
         Coroutine& m_coroutine;
     };
 
+    void resume() {
+        if (!calling || (calling->handle->resume(), wait_for_calling())) {
+            m_yielded = false;
+            m_handle.resume();
+        }
+    }
+    bool wait_for_calling() {
+        if (calling->handle->done()) {
+            calling.reset();
+            return true;
+        };
+        if (calling->handle->yielded()) {
+            calling->update_yield_value();
+        }
+        return false;
+    }
+
    protected:
     bool m_yielded = false;
     bool m_started = false;
+    struct YieldingHandle {
+        Handle handle;
+        std::function<void()> update_yield_value;
+    };
+    optional<YieldingHandle> calling{};
 
    private:
     void gain_ref() { ref_count++; }
@@ -72,17 +90,20 @@ class Coroutine {
     std::coroutine_handle<Coroutine> m_handle;
     int ref_count = 0;
 };
-template <typename Y>
-class YieldingCoroutine : public Coroutine {
+template <typename Y> class YieldingCoroutine : public Coroutine {
    public:
-    template <typename T>
-    std::suspend_always yield_value(T&& arg) {
+    template <typename T> std::suspend_always yield_value(T&& arg) {
         m_yield_value = std::forward<T>(arg);
         m_yielded = true;
         return {};
     }
 
-    optional<Y> yielded_value() const noexcept { return m_yield_value; }
+    optional<Y> yielded_value() const noexcept {
+        if (yielded())
+            return m_yield_value;
+        else
+            return {};
+    }
 
     class Handle : public Coroutine::Handle {
        public:
@@ -91,15 +112,15 @@ class YieldingCoroutine : public Coroutine {
         YieldingCoroutine* operator->() { return (YieldingCoroutine*) &this->m_coroutine; }
     };
 
-    template <typename R1>
-    struct Awaiter {
-        Promise<R1, Y> callee;
+    template <typename R1, typename Y1> struct Awaiter {
+        Promise<R1, Y1> callee;
         Handle caller;
         bool await_ready() {
             callee->start();
-            return caller->wait_for(callee);
+            std::move(caller->calling) = YieldingHandle{callee, [*this]() mutable { caller->yield_value(callee->yielded_value()); }};
+            return caller->wait_for_calling();
         }
-        bool await_suspend([[maybe_unused]] auto caller_handle) { return true; }
+        void await_suspend([[maybe_unused]] auto caller_handle) {}
         R1 await_resume() {
             if constexpr (!std::is_void_v<R1>) {
                 if (!callee->returned_value()) throw std::runtime_error("Function did not return a value");
@@ -109,65 +130,26 @@ class YieldingCoroutine : public Coroutine {
         }
     };
 
-    template <typename R1>
-    Awaiter<R1> await_transform(Promise<R1, Y>&& callee) {
+    template <typename R1, typename Y1> Awaiter<R1, Y1> await_transform(Promise<R1, Y1>&& callee) {
         return {std::move(callee), {*this}};
-    }
-    template <typename R1, typename Y1>
-    Awaiter<R1> await_transform(Promise<R1, Y1>&& callee) {
-        auto convert_types = [](Promise<R1, Y1>&& callee) -> Promise<R1, Y> {
-            callee->start();
-            while (!callee->done()) {
-                if (callee->yielded_value()) {
-                    co_yield callee->yielded_value();
-                }
-                callee->resume();
-            }
-            co_return *(callee->returned_value());
-        };
-        return await_transform(convert_types(std::move(callee)));
-    }
-    bool wait_for(Handle& h) {
-        if (h->done()) {
-            calling.reset();
-            return true;
-        };
-        std::move(calling) = h;
-        if (h->yielded()) {
-            yield_value(h->yielded_value());
-        }
-        return false;
-    }
-    void resume() {
-        m_yielded = false;
-        m_yield_value.reset();
-        if (!calling || ((*calling)->resume(), wait_for(*calling))) {
-            Coroutine::resume();
-        }
     }
 
    protected:
    private:
     optional<Y> m_yield_value{};
-    optional<Handle> calling{};
 };
 
 namespace detail {
 
-template <typename R>
-class ReturnValue {
+template <typename R> class ReturnValue {
    public:
-    template <typename T>
-    void return_value(T&& arg) {
-        m_return_value = std::forward<T>(arg);
-    }
+    template <typename T> void return_value(T&& arg) { m_return_value = std::forward<T>(arg); }
 
    protected:
     optional<R> m_return_value{};
 };
 
-template <>
-class ReturnValue<void> {
+template <> class ReturnValue<void> {
    public:
     void return_void() { m_return_value.set(); }
 
@@ -190,8 +172,7 @@ class ReturningCoroutine : public YieldingCoroutine<Y>, public detail::ReturnVal
     };
 };
 
-template <typename R, typename Y = void>
-class Promise : public ReturningCoroutine<R, Y>::Handle {
+template <typename R, typename Y = void> class Promise : public ReturningCoroutine<R, Y>::Handle {
    public:
     Promise(ReturningCoroutine<R, Y>& handle) : ReturningCoroutine<R, Y>::Handle(handle) {}
     using promise_type = ReturningCoroutine<R, Y>;
@@ -199,9 +180,6 @@ class Promise : public ReturningCoroutine<R, Y>::Handle {
    private:
 };
 
-template <typename R, typename Y>
-Promise<R, Y> ReturningCoroutine<R, Y>::get_return_object() {
-    return {*this};
-}
+template <typename R, typename Y> Promise<R, Y> ReturningCoroutine<R, Y>::get_return_object() { return {*this}; }
 
 }  // namespace promise
