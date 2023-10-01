@@ -307,3 +307,7 @@ YieldingCoroutine<Y>::Awaiter<R1, Y1> YieldingCoroutine<Y>::await_transform(Prom
 }
 
 }  // namespace promise
+
+#ifdef GLOBAL_PROMISE
+using promise::Promise;
+#endif
