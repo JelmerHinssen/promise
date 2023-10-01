@@ -20,7 +20,14 @@ template <typename R, typename Y, typename... Args> class ObservablePromise {
     ObservablePromise(Impl h) : impl(h) {}
     Promise<R, Y> operator()(Args... args) {
         co_await preHooks(std::forward<Args>(args)...);
-        co_return co_await impl(std::forward<Args>(args)...);
+        if constexpr(std::is_void<R>()) {
+            co_await impl(std::forward<Args>(args)...);
+            co_await postHooks(std::forward<Args>(args)...);
+        } else {
+            auto result = co_await impl(std::forward<Args>(args)...);
+            co_await postHooks(std::forward<Args>(args)...);
+            co_return result;
+        }
     }
     class HookList {
        private:
@@ -37,7 +44,7 @@ template <typename R, typename Y, typename... Args> class ObservablePromise {
         void operator+=(NoArgHook h) requires(sizeof...(Args) > 0) {
             hooks.push_back([h](Args...) { return h(); });
         }
-    } preHooks;
+    } preHooks, postHooks;
 
    private:
     Impl impl;

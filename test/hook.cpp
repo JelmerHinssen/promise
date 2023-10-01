@@ -98,6 +98,20 @@ TEST_F(ObservablePromiseTest, basicHooked) {
     EXPECT_TRUE(p->returned_value());
 }
 
+TEST_F(ObservablePromiseTest, basicPostHooked) {
+    auto p = empty_hook();
+    empty_hook.postHooks += empty_hook_hook;
+    EXPECT_EQ(living.size(), 1);
+    EXPECT_FALSE(p->started());
+    p->start();
+    expected_counts[EMPTY_HOOK]++;
+    expected_counts[EMPTY_HOOK_HOOK]++;
+    EXPECT_EQ(function_counts, expected_counts);
+    EXPECT_TRUE(p->started());
+    EXPECT_TRUE(p->done());
+    EXPECT_TRUE(p->returned_value());
+}
+
 TEST_F(ObservablePromiseTest, waitingHooked) {
     auto p = empty_hook();
     empty_hook.preHooks += empty_hook_hook;
@@ -114,6 +128,38 @@ TEST_F(ObservablePromiseTest, waitingHooked) {
     expected_counts[WAITING_HOOK_HOOK_1]++;
     expected_counts[EMPTY_HOOK_HOOK]++;
     expected_counts[EMPTY_HOOK]++;
+    EXPECT_EQ(function_counts, expected_counts);
+    EXPECT_TRUE(p->started());
+    EXPECT_TRUE(p->done());
+    EXPECT_TRUE(p->returned_value());
+}
+
+TEST_F(ObservablePromiseTest, waitingHookedPrePost) {
+    auto p = empty_hook();
+    empty_hook.preHooks += empty_hook_hook;
+    empty_hook.preHooks += waiting_hook_hook;
+    empty_hook.preHooks += empty_hook_hook;
+    empty_hook.postHooks += empty_hook_hook;
+    empty_hook.postHooks += waiting_hook_hook;
+    empty_hook.postHooks += empty_hook_hook;
+    EXPECT_EQ(living.size(), 1);
+    EXPECT_FALSE(p->started());
+    p->start();
+    expected_counts[EMPTY_HOOK_HOOK]++;
+    expected_counts[WAITING_HOOK_HOOK_0]++;
+    EXPECT_EQ(function_counts, expected_counts);
+
+    point.resume();
+    expected_counts[WAITING_HOOK_HOOK_1]++;
+    expected_counts[EMPTY_HOOK_HOOK]++;
+    expected_counts[EMPTY_HOOK]++;
+    expected_counts[EMPTY_HOOK_HOOK]++;
+    expected_counts[WAITING_HOOK_HOOK_0]++;
+
+    point.resume();
+    expected_counts[WAITING_HOOK_HOOK_1]++;
+    expected_counts[EMPTY_HOOK_HOOK]++;
+    
     EXPECT_EQ(function_counts, expected_counts);
     EXPECT_TRUE(p->started());
     EXPECT_TRUE(p->done());
@@ -146,6 +192,22 @@ TEST_F(ObservablePromiseTest, basicArg) {
 
 TEST_F(ObservablePromiseTest, hookedArg) {
     arg_hook.preHooks += arg_hook_hook;
+    auto p = arg_hook(2, 3);
+    EXPECT_EQ(living.size(), 1);
+    EXPECT_FALSE(p->started());
+    EXPECT_EQ(hook_value, -1);
+    p->start();
+    expected_counts[ARG_HOOK_HOOK]++;
+    expected_counts[ARG_HOOK]++;
+    EXPECT_EQ(function_counts, expected_counts);
+    EXPECT_EQ(hook_value, 5);
+    EXPECT_TRUE(p->started());
+    EXPECT_TRUE(p->done());
+    EXPECT_EQ(p->returned_value(), 5);
+}
+
+TEST_F(ObservablePromiseTest, postHookedArg) {
+    arg_hook.postHooks += arg_hook_hook;
     auto p = arg_hook(2, 3);
     EXPECT_EQ(living.size(), 1);
     EXPECT_FALSE(p->started());
