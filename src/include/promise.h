@@ -135,7 +135,7 @@ class ReturningCoroutine : public YieldingCoroutine<Y>, public detail::ReturnVal
     };
 };
 
-template <typename R, typename Y = void> class Promise : public ReturningCoroutine<R, Y>::Handle {
+template <typename R, typename Y = void> class [[nodiscard]] Promise : public ReturningCoroutine<R, Y>::Handle {
    public:
     Promise(ReturningCoroutine<R, Y>& handle) : ReturningCoroutine<R, Y>::Handle(handle) {}
     using promise_type = ReturningCoroutine<R, Y>;

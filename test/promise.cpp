@@ -319,3 +319,8 @@ TEST_F(PromiseTest, yieldVoidCombined) {
     p->resume();
     EXPECT_TRUE(p->done());
 }
+
+TEST_F(PromiseTest, discarded_coroutine) {
+    std::ignore = empty_co();
+    EXPECT_EQ(function_counts, expected_counts);
+}
