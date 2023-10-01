@@ -9,4 +9,5 @@
     SpaceAfterCStyleCast: true,
     AlwaysBreakTemplateDeclarations: MultiLine,
     BreakBeforeConceptDeclarations: Allowed,
+    RequiresClausePosition: SingleLine,
 }

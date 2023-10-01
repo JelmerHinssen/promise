@@ -310,4 +310,5 @@ YieldingCoroutine<Y>::Awaiter<R1, Y1> YieldingCoroutine<Y>::await_transform(Prom
 
 #ifdef GLOBAL_PROMISE
 using promise::Promise;
+using promise::SuspensionPoint;
 #endif
