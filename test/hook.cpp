@@ -20,6 +20,8 @@ class ObservablePromiseTest : public testing::Test {
         WAITING_HOOK_HOOK_0,
         WAITING_HOOK_HOOK_1,
         ARG_HOOK_HOOK,
+        ARG_POST_HOOK,
+        RESULT_POST_HOOK,
         FUNCTION_COUNT
     };
 
@@ -31,6 +33,7 @@ class ObservablePromiseTest : public testing::Test {
 
     SuspensionPoint<void> point;
     int hook_value = -1;
+    array<int, 4> post_hook_args{};
 
     TEST_HOOK(void, empty_hook);
     TEST_HOOK(void, empty_hook_hook);
@@ -38,6 +41,9 @@ class ObservablePromiseTest : public testing::Test {
     TEST_HOOK(int, int_hook);
     TEST_HOOK(int, arg_hook, int, int);
     TEST_HOOK(void, arg_hook_hook, int, int);
+    TEST_HOOK(void, arg_post_hook, int, int, int);
+    TEST_HOOK(void, result_post_hook, int);
+    TEST_HOOK(int, ambiguous_hook, int);
 };
 
 Promise<void> ObservablePromiseTest::empty_hook::impl() {
@@ -70,6 +76,24 @@ Promise<void> ObservablePromiseTest::arg_hook_hook::impl(int a, int b) {
     self->function_counts[ARG_HOOK_HOOK]++;
     self->hook_value = a + b;
     co_return;
+}
+
+Promise<void> ObservablePromiseTest::arg_post_hook::impl(int r, int a, int b) {
+    self->function_counts[ARG_POST_HOOK]++;
+    self->post_hook_args[0] = r;
+    self->post_hook_args[1] = a;
+    self->post_hook_args[2] = b;
+    co_return;
+}
+
+Promise<void> ObservablePromiseTest::result_post_hook::impl(int r) {
+    self->function_counts[RESULT_POST_HOOK]++;
+    self->post_hook_args[3] = r;
+    co_return;
+}
+
+Promise<int> ObservablePromiseTest::ambiguous_hook::impl(int r) {
+    co_return 2 * r;
 }
 
 TEST_F(ObservablePromiseTest, basic) {
@@ -220,6 +244,33 @@ TEST_F(ObservablePromiseTest, postHookedArg) {
     EXPECT_TRUE(p->started());
     EXPECT_TRUE(p->done());
     EXPECT_EQ(p->returned_value(), 5);
+}
+
+TEST_F(ObservablePromiseTest, resultHookedArg) {
+    arg_hook.postHooks += arg_post_hook;
+    arg_hook.postHooks += result_post_hook;
+    auto p = arg_hook(3, 8);
+    EXPECT_EQ(living.size(), 1);
+    EXPECT_FALSE(p->started());
+    p->start();
+    expected_counts[ARG_HOOK]++;
+    expected_counts[ARG_POST_HOOK]++;
+    expected_counts[RESULT_POST_HOOK]++;
+    EXPECT_EQ(function_counts, expected_counts);
+    std::array<int, 4> expected_values{11, 3, 8, 11};
+    EXPECT_EQ(post_hook_args, expected_values);
+    EXPECT_TRUE(p->started());
+    EXPECT_TRUE(p->done());
+    EXPECT_EQ(p->returned_value(), 11);
+}
+
+TEST_F(ObservablePromiseTest, ambiguousHook) {
+    ambiguous_hook.postHooks.argHook(result_post_hook);
+    auto p = ambiguous_hook(6);
+    p->start();
+    std::array<int, 4> expected_values{0, 0, 0, 6};
+    EXPECT_EQ(post_hook_args, expected_values);
+    EXPECT_EQ(p->returned_value(), 12);
 }
 
 TEST_F(ObservablePromiseTest, noArghookedArg) {
