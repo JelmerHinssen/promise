@@ -42,6 +42,16 @@ template <typename T, typename Ref = T> class inplace_optional {
     explicit operator bool() const noexcept { return m_has_value; }
     bool operator!() const noexcept { return !m_has_value; }
     inplace_optional() : m_dummy{}, m_has_value(false) {}
+    inplace_optional(const inplace_optional& other) : inplace_optional() {
+        if (other.m_has_value) {
+            assign(other.m_value);
+        }
+    }
+    inplace_optional(inplace_optional&& other) : inplace_optional() {
+        if (other.m_has_value) {
+            assign(std::move(other.m_value));
+        }
+    }
     template <typename... Args>
     explicit inplace_optional(Args&&... args)
         requires(sizeof...(Args) > 0)

@@ -35,7 +35,7 @@ class Coroutine {
     std::suspend_always initial_suspend() const noexcept { return {}; }
     std::suspend_always final_suspend() const noexcept { return {}; }
     void unhandled_exception() {}
-    template <typename T> SuspensionPoint<T>& await_transform(SuspensionPoint<T>& s);
+    template <typename T> auto await_transform(SuspensionPoint<T>& s);
 
     class Handle {
        public:
@@ -155,6 +155,11 @@ class WaitObject {
     }
 
    protected:
+    void resume_handle() {
+        auto old_handle = *m_handle;
+        m_handle.reset();
+        old_handle->resume();
+    }
     optional<Handle> m_handle;
 };
 
@@ -162,23 +167,23 @@ template <typename T> class ResumeSuspension : public WaitObject {
    public:
     using Handle = Coroutine::Handle;
     void resume(T v) {
-        std::move(m_msg) = v;
-        (*m_handle)->resume();
+        std::move(*m_msg) = v;
+        resume_handle();
     }
 
    protected:
-    optional<T> m_msg;
+    optional<T>* m_msg{};
 };
 template <> class ResumeSuspension<void> : public WaitObject {
    public:
     using Handle = Coroutine::Handle;
     void resume() {
-        m_msg.set();
-        (*m_handle)->resume();
+        m_msg->set();
+        resume_handle();
     }
 
    protected:
-    optional<void> m_msg;
+    optional<void>* m_msg{};
 };
 }  // namespace detail
 
@@ -187,17 +192,23 @@ template <typename T> class SuspensionPoint : public detail::ResumeSuspension<T>
     using Handle = Coroutine::Handle;
     using detail::ResumeSuspension<T>::m_msg;
     using detail::ResumeSuspension<T>::m_handle;
-    bool await_ready() { return false; }
-    void await_suspend(auto) {}
-    T await_resume() {
-        assert(m_msg);
-        m_handle.reset();
-        return *m_msg;
-    }
+    struct Awaiter {
+        bool await_ready() { return false; }
+        void await_suspend(auto) {}
+        T await_resume() {
+            assert(m_msg);
+            return *m_msg;
+        }
+        Awaiter(SuspensionPoint& s) {
+            assert(!s.m_msg);
+            s.m_msg = &m_msg;
+        }
+        optional<T> m_msg;
+    };
     void set_handle(Handle h) {
         assert(!m_handle);
         std::move(m_handle) = h;
-        m_msg.reset();
+        m_msg = nullptr;
     }
 };
 
@@ -247,10 +258,11 @@ inline bool Coroutine::wait_for_calling() {
     return false;
 }
 
-template <typename T> SuspensionPoint<T>& Coroutine::await_transform(SuspensionPoint<T>& s) {
+
+template <typename T> auto Coroutine::await_transform(SuspensionPoint<T>& s) {
     s.set_handle({*this});
     m_wait_object = &s;
-    return s;
+    return SuspensionPoint<T>::Awaiter(s);
 }
 
 inline void Coroutine::gain_ref() { m_ref_count++; }
