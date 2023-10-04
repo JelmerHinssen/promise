@@ -17,6 +17,10 @@ class RangeSuspensionTest : public testing::Test {
         RANGE_SUSPENSION_1,
         ARRAY_RANGE_SUSPENSION_0,
         ARRAY_RANGE_SUSPENSION_1,
+        PARALLEL_PROMISE_0,
+        PARALLEL_PROMISE_1,
+        PARALLEL_AWAIT_0,
+        PARALLEL_AWAIT_1,
         FUNCTION_COUNT
     };
 
@@ -41,6 +45,17 @@ class RangeSuspensionTest : public testing::Test {
         function_counts[ARRAY_RANGE_SUSPENSION_0]++;
         co_await points_array;
         function_counts[ARRAY_RANGE_SUSPENSION_1]++;
+    }
+    Promise<void> range_promise_waiting() {
+        function_counts[PARALLEL_AWAIT_0]++;
+        auto do_thing = [&, this](int x) -> Promise<void> {
+            function_counts[PARALLEL_PROMISE_0]++;
+            co_await points[x];
+            function_counts[PARALLEL_PROMISE_1]++;
+        };
+        vector<Promise<void>> v = {do_thing(0), do_thing(1), do_thing(2)};
+        co_await v;
+        function_counts[PARALLEL_AWAIT_1]++;
     }
 };
 
@@ -69,5 +84,25 @@ TEST_F(RangeSuspensionTest, array_range_wait) {
     EXPECT_EQ(function_counts, expected_counts);
     points_array[2].resume();
     expected_counts[ARRAY_RANGE_SUSPENSION_1]++;
+    EXPECT_EQ(function_counts, expected_counts);
+}
+
+TEST_F(RangeSuspensionTest, range_promise_waiting) {
+    auto p = range_promise_waiting();
+    p->start();
+    expected_counts[PARALLEL_AWAIT_0]++;
+    expected_counts[PARALLEL_PROMISE_0]++;
+    expected_counts[PARALLEL_PROMISE_0]++;
+    expected_counts[PARALLEL_PROMISE_0]++;
+    EXPECT_EQ(function_counts, expected_counts);
+    points[1].resume();
+    expected_counts[PARALLEL_PROMISE_1]++;
+    EXPECT_EQ(function_counts, expected_counts);
+    points[0].resume();
+    expected_counts[PARALLEL_PROMISE_1]++;
+    EXPECT_EQ(function_counts, expected_counts);
+    points[2].resume();
+    expected_counts[PARALLEL_PROMISE_1]++;
+    expected_counts[PARALLEL_AWAIT_1]++;
     EXPECT_EQ(function_counts, expected_counts);
 }

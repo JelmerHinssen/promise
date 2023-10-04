@@ -106,6 +106,7 @@ template <typename Y> class YieldingCoroutine : public Coroutine {
     };
     using Coroutine::await_transform;  // Necessary to find await_transform(SuspensionPoint<T>)
     template <typename R1, typename Y1> Awaiter<R1, Y1> await_transform(Promise<R1, Y1>&& callee);
+    template <typename R1, typename Y1> Awaiter<R1, Y1> await_transform(Promise<R1, Y1>& callee);
     auto await_transform(awaitable_range<Y> auto&& s);
 
    private:
@@ -345,6 +346,12 @@ template <typename Y> template <typename R1, typename Y1> R1 YieldingCoroutine<Y
 template <typename Y>
 template <typename R1, typename Y1>
 YieldingCoroutine<Y>::Awaiter<R1, Y1> YieldingCoroutine<Y>::await_transform(Promise<R1, Y1>&& callee) {
+    return {std::move(callee)};
+}
+
+template <typename Y>
+template <typename R1, typename Y1>
+YieldingCoroutine<Y>::Awaiter<R1, Y1> YieldingCoroutine<Y>::await_transform(Promise<R1, Y1>& callee) {
     return {std::move(callee)};
 }
 
