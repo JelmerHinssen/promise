@@ -73,6 +73,15 @@ class Coroutine {
 
 template <typename T, typename Y>
 concept compatible_yield_type = requires(T&& arg, optional<Y>& y) { y = std::forward<T>(arg); };
+template <typename Y> class YieldingCoroutine;
+
+template <typename T, typename Y>
+concept awaitable = requires(T&& arg, YieldingCoroutine<Y> co) {
+    co.await_transform(arg);
+};
+
+template <typename T, typename Y>
+concept awaitable_range = std::ranges::range<T> && awaitable<std::ranges::range_value_t<T>, Y>;
 
 template <typename Y> class YieldingCoroutine : public Coroutine {
    public:
@@ -97,6 +106,7 @@ template <typename Y> class YieldingCoroutine : public Coroutine {
     };
     using Coroutine::await_transform;  // Necessary to find await_transform(SuspensionPoint<T>)
     template <typename R1, typename Y1> Awaiter<R1, Y1> await_transform(Promise<R1, Y1>&& callee);
+    auto await_transform(awaitable_range<Y> auto&& s);
 
    private:
     optional<Y> m_yield_value{};
@@ -258,11 +268,32 @@ inline bool Coroutine::wait_for_calling() {
     return false;
 }
 
-
 template <typename T> auto Coroutine::await_transform(SuspensionPoint<T>& s) {
     s.set_handle({*this});
     m_wait_object = &s;
     return SuspensionPoint<T>::Awaiter(s);
+}
+
+template <typename Y> auto YieldingCoroutine<Y>::await_transform(awaitable_range<Y> auto&& s) {
+    return await_transform([&]() -> Promise<void> {
+        size_t left = s.size();
+        SuspensionPoint<void> point;
+        bool suspended = false;
+        auto resume = [&]() {
+            left--;
+            if (suspended && left <= 0) {
+                point.resume();
+            }
+        };
+        for (auto& x : s) {
+            auto waiter = [&, this]() -> Promise<void> { co_await x; resume();}();
+            waiter->start();
+        }
+        if (left > 0) {
+            suspended = true;
+            co_await point;
+        }
+    }());
 }
 
 inline void Coroutine::gain_ref() { m_ref_count++; }
@@ -291,7 +322,7 @@ template <typename Y> optional<Y> YieldingCoroutine<Y>::yielded_value() const no
 }
 template <typename Y> template <typename R1, typename Y1> bool YieldingCoroutine<Y>::Awaiter<R1, Y1>::await_ready() {
     callee->start();
-    
+
     return callee->done();
 }
 
@@ -299,8 +330,7 @@ template <typename Y>
 template <typename R1, typename Y1>
 void YieldingCoroutine<Y>::Awaiter<R1, Y1>::await_suspend(auto caller_handle) {
     auto& caller = caller_handle.promise();
-    std::move(caller.calling) =
-        YieldingHandle{callee, [&, *this]() { caller.yield_value(callee->yielded_value()); }};
+    std::move(caller.calling) = YieldingHandle{callee, [&, *this]() { caller.yield_value(callee->yielded_value()); }};
     caller.wait_for_calling();
 }
 
