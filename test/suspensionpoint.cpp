@@ -94,12 +94,15 @@ class SuspensionTest : public testing::Test {
 
 TEST_F(SuspensionTest, simpleSuspension) {
     auto p = simple_suspension();
+    EXPECT_FALSE(point);
     p->start();
+    EXPECT_TRUE(point);
     expected_counts[SIMPLE_SUSPENSION_0]++;
     EXPECT_EQ(function_counts, expected_counts);
     EXPECT_FALSE(p->done());
     EXPECT_FALSE(p->yielded());
     point.resume();
+    EXPECT_FALSE(point);
     expected_counts[SIMPLE_SUSPENSION_1]++;
     EXPECT_EQ(function_counts, expected_counts);
     EXPECT_TRUE(p->done());

@@ -164,6 +164,12 @@ class WaitObject {
         assert(m_handle);
         std::move(m_handle) = h;
     }
+    operator bool() const noexcept {
+        return m_handle.has_value();
+    }
+    bool operator!() const noexcept {
+        return !m_handle.has_value();
+    }
 
    protected:
     void resume_handle() {
