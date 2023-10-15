@@ -11,3 +11,7 @@ include("dependencies.cmake" OPTIONAL)
 include("generated.cmake" REQUIRED)
 add_subdirectory(src)
 add_subdirectory(test)
+install(TARGETS promise_lib promise_options ${all_libraries} EXPORT promiseTargets)
+export(EXPORT promiseTargets
+    FILE "${CMAKE_CURRENT_SOURCE_DIR}/build.cmake"
+    NAMESPACE promise::)

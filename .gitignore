@@ -3,3 +3,4 @@ build
 bin
 generated.cmake
 buffer*.txt
+build.cmake
