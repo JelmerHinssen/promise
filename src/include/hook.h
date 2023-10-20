@@ -2,8 +2,8 @@
 #include <functional>
 #include <vector>
 
-#include "promise.h"
 #include "hook_helper.h"
+#include "promise.h"
 
 namespace promise {
 
@@ -114,16 +114,34 @@ template <typename Y, typename... Args> class ObservablePromise<void, Y, Args...
     Impl impl;
 };
 
-#define HOOK(result, yield, Parent, name, ...)                                       \
-    class name : public ObservablePromise<result, yield __VA_OPT__(, __VA_ARGS__)> { \
-        Parent* self;                                                                \
-        Promise<result, yield> impl(__VA_ARGS__);                                    \
-        name(Parent* p)                                                              \
-            : ObservablePromise<result, yield __VA_OPT__(, __VA_ARGS__)>(            \
-                  promise::bind_member(&name::impl, this)),                  \
-              self(p) {}                                                             \
-        friend class Parent;                                                         \
-    } name{this};                                                                    \
+template <typename T> class Self {
+   public:
+    Self(T* p) : self(p) {}
+    Self(const Self& other) : self((T*) ((char*) this + ((char*) other.self - (char*) &other))) {}
+
+   protected:
+    T* self;
+};
+
+#define HOOK(result, yield, Parent, name, ...)                                                \
+    class name : public promise::Self<Parent>,                                                \
+                 public promise::ObservablePromise<result, yield __VA_OPT__(, __VA_ARGS__)> { \
+        promise::Promise<result, yield> impl(__VA_ARGS__);                                    \
+        name(Parent* p)                                                                       \
+            : promise::Self<Parent>(p),                                                       \
+              promise::ObservablePromise<result, yield __VA_OPT__(, __VA_ARGS__)>(            \
+                  promise::bind_member(&name::impl, this)) {}                                 \
+        friend class Parent;                                                                  \
+                                                                                              \
+       public:                                                                                \
+        name(const name& other)                                                               \
+            : promise::Self<Parent>((const Self<Parent>&) other),                             \
+              promise::ObservablePromise<result, yield __VA_OPT__(, __VA_ARGS__)>(            \
+                  promise::bind_member(&name::impl, this)) {                                  \
+            preHooks = other.preHooks;                                                        \
+            postHooks = other.postHooks;                                                      \
+        }                                                                                     \
+    } name{this};                                                                             \
     friend class name
 
 }  // namespace promise
