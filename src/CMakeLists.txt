@@ -30,7 +30,7 @@ endif()
 add_library(promise_lib STATIC ${PROMISE_SRC})
 add_executable(promise_run "main.cpp" ${CMAKE_CURRENT_BINARY_DIR}/nullmain.cpp)
 set_target_properties(promise_run PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" VS_DEBUGGER_ENVIRONMENT "PATH=%PATH%;bin")
-target_include_directories(promise_lib PUBLIC .)
+target_include_directories(promise_lib PRIVATE . PUBLIC ./include)
 target_link_libraries(promise_lib promise_options ${all_libraries})
 target_link_libraries(promise_run promise_lib promise_options)
  add_custom_command(TARGET promise_lib
