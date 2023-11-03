@@ -20,23 +20,7 @@ using namespace movinghook;
 class MovingHookTest;
 class HookOwner {
    public:
-    class empty_hook : public promise::Self<HookOwner>, public promise::ObservablePromise<int, void> {
-        promise::Promise<int, void> impl();
-        empty_hook(HookOwner* p)
-            : promise::Self<HookOwner>(p),
-              promise::ObservablePromise<int, void>(promise::bind_member(&empty_hook::impl, this)) {}
-        friend class HookOwner;
-
-       public:
-        empty_hook(const empty_hook& other)
-            : promise::Self<HookOwner>((const Self<HookOwner>&) other),
-              promise::ObservablePromise<int, void>(promise::bind_member(&empty_hook::impl, this)) {
-            std::cout << "copy 1 called" << std::endl;
-            preHooks = other.preHooks;
-            postHooks = other.postHooks;
-        }
-    } empty_hook{this};
-    friend class empty_hook;
+    TEST_OWNER_HOOK(int, empty_hook);
     MovingHookTest* that;
     int id = 0;
 
@@ -52,22 +36,7 @@ class MovingHookTest : public testing::Test {
     int hook_value = -1;
     array<int, 4> post_hook_args{};
     HookOwner owner{this};
-    class empty_hook_hook : public promise::Self<MovingHookTest>, public promise::ObservablePromise<void, void> {
-        promise::Promise<void, void> impl();
-        empty_hook_hook(MovingHookTest* p)
-            : promise::Self<MovingHookTest>(p),
-              promise::ObservablePromise<void, void>(promise::bind_member(&empty_hook_hook::impl, this)) {}
-        friend class MovingHookTest;
-
-       public:
-        empty_hook_hook(const empty_hook_hook& other)
-            : promise::Self<MovingHookTest>((const Self<MovingHookTest>&) other),
-              promise::ObservablePromise<void, void>(promise::bind_member(&empty_hook_hook::impl, this)) {
-            std::cout << "copy 2 called: " << other.self << " -> " << self << std::endl;
-            preHooks = other.preHooks;
-            postHooks = other.postHooks;
-        }
-    } empty_hook_hook{this};
+    TEST_HOOK(void, empty_hook_hook);
     friend class empty_hook_hook;
 };
 
@@ -83,8 +52,6 @@ Promise<void> MovingHookTest::empty_hook_hook::impl() {
 
 TEST_F(MovingHookTest, non_moving_empty_hook) {
     EXPECT_EQ(function_counts, expected_counts);
-    cout << "non_moving: " << this << endl;
-    cout << "owner: " << &owner << endl;
     owner.empty_hook.preHooks += empty_hook_hook;
     auto p = owner.empty_hook();
     p->start();

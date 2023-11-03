@@ -7,6 +7,9 @@
 
 namespace promise {
 
+template <typename R, typename Y, typename P, typename... Args>
+class HookImpl;
+
 template <typename R, typename Y, typename... Args> class ObservablePromise {
    public:
     using Hook = std::function<Promise<void, Y>(Args...)>;
@@ -18,6 +21,8 @@ template <typename R, typename Y, typename... Args> class ObservablePromise {
     using NoArgRRefHook = std::function<Promise<void, Y>(RRef)>;
     using Impl = std::function<Promise<R, Y>(Args...)>;
     ObservablePromise(Impl h) : impl(h) {}
+    ObservablePromise(const ObservablePromise& other, Impl impl)
+        : postHooks(other.postHooks), preHooks(other.preHooks), impl(impl) {}
     Promise<R, Y> operator()(Args... args) {
         co_await preHooks(std::forward<Args>(args)...);
         R result = co_await impl(std::forward<Args>(args)...);
@@ -54,6 +59,18 @@ template <typename R, typename Y, typename... Args> class ObservablePromise {
         void resultHook(NoArgRRefHook h) {
             hooks.push_back([h](RRef r, Args...) { return h(r); });
         }
+        template <typename R1, typename P1, typename... Args1>
+        void argHook(HookImpl<R1, Y, P1, Args1...>& h) {
+            argHook(h.impl());
+        }
+        template <typename R1, typename P1, typename... Args1>
+        void resultHook(HookImpl<R1, Y, P1, Args1...>& h) {
+            resultHook(h.impl());
+        }
+        template <typename R1, typename P1, typename... Args1>
+        void operator+=(HookImpl<R1, Y, P1, Args1...>& h) {
+            *this += h.impl();
+        }
     } postHooks;
     class PreHookList {
        private:
@@ -70,9 +87,13 @@ template <typename R, typename Y, typename... Args> class ObservablePromise {
         void operator+=(NoArgHook h) requires(sizeof...(Args) > 0) {
             hooks.push_back([h](Args...) { return h(); });
         }
+        template <typename R1, typename P1, typename... Args1>
+        void operator+=(HookImpl<R1, Y, P1, Args1...>& h) {
+            *this += h.impl();
+        }
     } preHooks;
 
-   private:
+   protected:
     Impl impl;
 };
 template <typename Y, typename... Args> class ObservablePromise<void, Y, Args...> {
@@ -82,6 +103,8 @@ template <typename Y, typename... Args> class ObservablePromise<void, Y, Args...
     using R = void;
     using Impl = std::function<Promise<R, Y>(Args...)>;
     ObservablePromise(Impl h) : impl(h) {}
+    ObservablePromise(const ObservablePromise& other, Impl impl)
+        : postHooks(other.postHooks), preHooks(other.preHooks), impl(impl) {}
     Promise<R, Y> operator()(Args... args) {
         co_await preHooks(std::forward<Args>(args)...);
         if constexpr (std::is_void<R>()) {
@@ -108,9 +131,14 @@ template <typename Y, typename... Args> class ObservablePromise<void, Y, Args...
         void operator+=(NoArgHook h) requires(sizeof...(Args) > 0) {
             hooks.push_back([h](Args...) { return h(); });
         }
+        template <typename R1, typename P1, typename... Args1>
+        void operator+=(HookImpl<R1, Y, P1, Args1...>& h) {
+            *this += h.impl();
+        }
     } preHooks, postHooks;
+    using PostHookList = PreHookList;
 
-   private:
+   protected:
     Impl impl;
 };
 
@@ -123,25 +151,31 @@ template <typename T> class Self {
     T* self;
 };
 
-#define HOOK(result, yield, Parent, name, ...)                                                \
-    class name : public promise::Self<Parent>,                                                \
-                 public promise::ObservablePromise<result, yield __VA_OPT__(, __VA_ARGS__)> { \
-        promise::Promise<result, yield> impl(__VA_ARGS__);                                    \
-        name(Parent* p)                                                                       \
-            : promise::Self<Parent>(p),                                                       \
-              promise::ObservablePromise<result, yield __VA_OPT__(, __VA_ARGS__)>(            \
-                  promise::bind_member(&name::impl, this)) {}                                 \
-        friend class Parent;                                                                  \
-                                                                                              \
-       public:                                                                                \
-        name(const name& other)                                                               \
-            : promise::Self<Parent>((const Self<Parent>&) other),                             \
-              promise::ObservablePromise<result, yield __VA_OPT__(, __VA_ARGS__)>(            \
-                  promise::bind_member(&name::impl, this)) {                                  \
-            preHooks = other.preHooks;                                                        \
-            postHooks = other.postHooks;                                                      \
-        }                                                                                     \
-    } name{this};                                                                             \
+
+template <typename R, typename Y, typename P, typename... Args>
+class HookImpl : public promise::Self<P>, public promise::ObservablePromise<R, Y, Args...> {
+   protected:
+    using ObservablePromise = promise::ObservablePromise<R, Y, Args...>;
+    using Impl = ObservablePromise::Impl;
+    HookImpl(P* p, Impl impl) : promise::Self<P>(p), ObservablePromise(impl) {}
+    HookImpl(const HookImpl& other, Impl impl) : promise::Self<P>(other), ObservablePromise(other, impl) {}
+    public:
+    Impl& impl() { return ObservablePromise::impl; }
+};
+
+#define HOOK(result, yield, Parent, name, ...)                                               \
+    class name : public promise::HookImpl<result, yield, Parent __VA_OPT__(, __VA_ARGS__)> { \
+        promise::Promise<result, yield> impl(__VA_ARGS__);                                   \
+        name(Parent* p)                                                                      \
+            : promise::HookImpl<result, yield, Parent __VA_OPT__(, __VA_ARGS__)>(            \
+                  p, promise::bind_member(&name::impl, this)){};                             \
+        friend class Parent;                                                                 \
+                                                                                             \
+       private:                                                                               \
+        name(const name& other)                                                              \
+            : promise::HookImpl<result, yield, Parent __VA_OPT__(, __VA_ARGS__)>(            \
+                  other, promise::bind_member(&name::impl, this)) {}                         \
+    } name{this};                                                                            \
     friend class name
 
 }  // namespace promise
