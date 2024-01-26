@@ -151,6 +151,43 @@ template <typename T> class Self {
     T* self;
 };
 
+template <typename T> class MovingSelf : public Self<T> {
+   private:
+    using Self = Self<T>;
+   public:
+    MovingSelf(T* p) : Self(p) {}
+    MovingSelf(const MovingSelf&) = delete;
+    MovingSelf(MovingSelf&& other): Self(other), references(other.references) {
+        for (Reference* ref : references) {
+            ref->self = this;
+        }
+    }
+    ~MovingSelf() {
+        for (Reference* ref : references) {
+            ref->self = nullptr;
+        }
+    }
+    template <typename R, typename... Args>
+    std::function<R(Args...)> movableHook(const auto& f) {
+        auto ref = make_shared<Reference>(this);
+        references.insert(ref.get());
+        return [f, ref = std::move(ref)](Args... a) {
+            return f(ref->self->self, std::forward<Args>(a)...);
+        };
+    }
+   protected:
+   private:
+    struct Reference {
+        Reference(MovingSelf* s): self(s) {}
+        MovingSelf* self;
+        ~Reference() {
+            if (self) {
+                self->references.erase(this);
+            }
+        }
+    };
+    std::unordered_set<Reference*> references;
+};
 
 template <typename R, typename Y, typename P, typename... Args>
 class HookImpl : public promise::Self<P>, public promise::ObservablePromise<R, Y, Args...> {
