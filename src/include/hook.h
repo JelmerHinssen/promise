@@ -10,6 +10,13 @@ namespace promise {
 template <typename R, typename Y, typename P, typename... Args>
 class HookImpl;
 
+namespace detail {
+    template <typename Hook>
+    class HookList {
+
+    };
+}
+
 template <typename R, typename Y, typename... Args> class ObservablePromise {
    public:
     using Hook = std::function<Promise<void, Y>(Args...)>;
@@ -119,6 +126,8 @@ template <typename Y, typename... Args> class ObservablePromise<void, Y, Args...
     class PreHookList {
        private:
         std::vector<Hook> hooks;
+        std::vector<size_t> ids;
+        size_t idCounter = 0;
         Promise<void, Y> operator()(Args... args) {
             for (auto& hook : hooks) {
                 co_await hook(std::forward<Args>(args)...);
@@ -127,13 +136,26 @@ template <typename Y, typename... Args> class ObservablePromise<void, Y, Args...
         friend class ObservablePromise;
 
        public:
-        void operator+=(Hook h) { hooks.push_back(h); }
-        void operator+=(NoArgHook h) requires(sizeof...(Args) > 0) {
-            hooks.push_back([h](Args...) { return h(); });
+        size_t add(const Hook& h) {
+            hooks.push_back(h);
+            ids.push_back(idCounter);
+            return idCounter++;
+        }
+        bool remove(size_t id) {
+            auto it = std::find(ids.begin(), ids.end(), id);
+            if (it == ids.end()) return false;
+            size_t index = it - ids.begin();
+            hooks.erase(hooks.begin() + index);
+            ids.erase(it);
+            return true;
+        }
+        size_t operator+=(Hook h) { return add(h);}
+        size_t operator+=(NoArgHook h) requires(sizeof...(Args) > 0) {
+            return add([h](Args...) { return h(); });
         }
         template <typename R1, typename P1, typename... Args1>
-        void operator+=(HookImpl<R1, Y, P1, Args1...>& h) {
-            *this += h.impl();
+        size_t operator+=(HookImpl<R1, Y, P1, Args1...>& h) {
+            return add(h.impl());
         }
     } preHooks, postHooks;
     using PostHookList = PreHookList;
