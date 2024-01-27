@@ -7,15 +7,40 @@
 
 namespace promise {
 
-template <typename R, typename Y, typename P, typename... Args>
-class HookImpl;
+template <typename R, typename Y, typename P, typename... Args> class HookImpl;
 
 namespace detail {
-    template <typename Hook>
-    class HookList {
+    
+template <typename Hook> class HookList {
+   public:
+    size_t add(const Hook& h) {
+        hooks.push_back(h);
+        ids.push_back(idCounter);
+        return idCounter++;
+    }
+    bool remove(size_t id) {
+        auto it = std::find(ids.begin(), ids.end(), id);
+        if (it == ids.end()) return false;
+        size_t index = it - ids.begin();
+        hooks.erase(hooks.begin() + index);
+        ids.erase(it);
+        return true;
+    }
+    bool set(size_t id, const Hook& h) {
+        auto it = std::find(ids.begin(), ids.end(), id);
+        if (it == ids.end()) return false;
+        size_t index = it - ids.begin();
+        hooks[index] = h;
+        return true;
+    }
 
-    };
-}
+   protected:
+    std::vector<Hook> hooks;
+    std::vector<size_t> ids;
+    size_t idCounter = 0;
+};
+
+}  // namespace detail
 
 template <typename R, typename Y, typename... Args> class ObservablePromise {
    public:
@@ -36,67 +61,63 @@ template <typename R, typename Y, typename... Args> class ObservablePromise {
         co_await postHooks(result, std::forward<Args>(args)...);
         co_return result;
     }
-    class PostHookList {
+    class PostHookList : public detail::HookList<RRefHook> {
        private:
-        std::vector<RRefHook> hooks;
+        using detail::HookList<RRefHook>::add;
         Promise<void, Y> operator()(RRef result, Args... args) {
-            for (auto& hook : hooks) {
+            for (auto& hook : detail::HookList<RRefHook>::hooks) {
                 co_await hook(result, std::forward<Args>(args)...);
             }
         }
         friend class ObservablePromise;
 
        public:
-        void operator+=(RRefHook h) { hooks.push_back(h); }
-        void operator+=(Hook h) {
+        size_t operator+=(RRefHook h) { return add(h);}
+        size_t operator+=(Hook h) {
             static_assert(!detail::ambiguous_return_and_arguments<R, Args...>,
                           "The type of hook is ambiguous. Use .argHook() or .resultHook() to disambiguate.");
-            argHook(h);
+            return argHook(h);
         }
-        void argHook(Hook h) {
-            hooks.push_back([h](RRef, Args... args) { return h(std::forward<Args>(args)...); });
+        size_t argHook(Hook h) {
+            return add([h](RRef, Args... args) { return h(std::forward<Args>(args)...); });
         }
-        void operator+=(NoArgHook h) requires(sizeof...(Args) > 0) {
-            hooks.push_back([h](RRef, Args...) { return h(); });
+        size_t operator+=(NoArgHook h) requires(sizeof...(Args) > 0) {
+            return add([h](RRef, Args...) { return h(); });
         }
-        void operator+=(NoArgRRefHook h)
+        size_t operator+=(NoArgRRefHook h)
             requires(sizeof...(Args) > 0 && !detail::ambiguous_return_and_arguments<R, Args...>) {
-            resultHook(h);
+            return resultHook(h);
         }
-        void resultHook(NoArgRRefHook h) {
-            hooks.push_back([h](RRef r, Args...) { return h(r); });
+        size_t resultHook(NoArgRRefHook h) {
+            return add([h](RRef r, Args...) { return h(r); });
         }
-        template <typename R1, typename P1, typename... Args1>
-        void argHook(HookImpl<R1, Y, P1, Args1...>& h) {
-            argHook(h.impl());
+        template <typename R1, typename P1, typename... Args1> size_t argHook(HookImpl<R1, Y, P1, Args1...>& h) {
+            return argHook(h.impl());
         }
-        template <typename R1, typename P1, typename... Args1>
-        void resultHook(HookImpl<R1, Y, P1, Args1...>& h) {
-            resultHook(h.impl());
+        template <typename R1, typename P1, typename... Args1> size_t resultHook(HookImpl<R1, Y, P1, Args1...>& h) {
+            return resultHook(h.impl());
         }
-        template <typename R1, typename P1, typename... Args1>
-        void operator+=(HookImpl<R1, Y, P1, Args1...>& h) {
-            *this += h.impl();
+        template <typename R1, typename P1, typename... Args1> size_t operator+=(HookImpl<R1, Y, P1, Args1...>& h) {
+            return *this += h.impl();
         }
     } postHooks;
-    class PreHookList {
+    class PreHookList : public detail::HookList<Hook> {
        private:
-        std::vector<Hook> hooks;
+        using detail::HookList<Hook>::add;
         Promise<void, Y> operator()(Args... args) {
-            for (auto& hook : hooks) {
+            for (auto& hook : detail::HookList<Hook>::hooks) {
                 co_await hook(std::forward<Args>(args)...);
             }
         }
         friend class ObservablePromise;
 
        public:
-        void operator+=(Hook h) { hooks.push_back(h); }
-        void operator+=(NoArgHook h) requires(sizeof...(Args) > 0) {
-            hooks.push_back([h](Args...) { return h(); });
+        size_t operator+=(Hook h) { return add(h); }
+        size_t operator+=(NoArgHook h) requires(sizeof...(Args) > 0) {
+            return add([h](Args...) { return h(); });
         }
-        template <typename R1, typename P1, typename... Args1>
-        void operator+=(HookImpl<R1, Y, P1, Args1...>& h) {
-            *this += h.impl();
+        template <typename R1, typename P1, typename... Args1> size_t operator+=(HookImpl<R1, Y, P1, Args1...>& h) {
+            return *this += h.impl();
         }
     } preHooks;
 
@@ -123,45 +144,22 @@ template <typename Y, typename... Args> class ObservablePromise<void, Y, Args...
             co_return result;
         }
     }
-    class PreHookList {
+    class PreHookList : public detail::HookList<Hook> {
        private:
-        std::vector<Hook> hooks;
-        std::vector<size_t> ids;
-        size_t idCounter = 0;
+       using detail::HookList<Hook>::add;
         Promise<void, Y> operator()(Args... args) {
-            for (auto& hook : hooks) {
+            for (auto& hook : detail::HookList<Hook>::hooks) {
                 co_await hook(std::forward<Args>(args)...);
             }
         }
         friend class ObservablePromise;
 
        public:
-        size_t add(const Hook& h) {
-            hooks.push_back(h);
-            ids.push_back(idCounter);
-            return idCounter++;
-        }
-        bool remove(size_t id) {
-            auto it = std::find(ids.begin(), ids.end(), id);
-            if (it == ids.end()) return false;
-            size_t index = it - ids.begin();
-            hooks.erase(hooks.begin() + index);
-            ids.erase(it);
-            return true;
-        }
-        bool set(size_t id, const Hook& h) {
-            auto it = std::find(ids.begin(), ids.end(), id);
-            if (it == ids.end()) return false;
-            size_t index = it - ids.begin();
-            hooks[index] = h;
-            return true;
-        }
-        size_t operator+=(Hook h) { return add(h);}
+        size_t operator+=(Hook h) { return add(h); }
         size_t operator+=(NoArgHook h) requires(sizeof...(Args) > 0) {
             return add([h](Args...) { return h(); });
         }
-        template <typename R1, typename P1, typename... Args1>
-        size_t operator+=(HookImpl<R1, Y, P1, Args1...>& h) {
+        template <typename R1, typename P1, typename... Args1> size_t operator+=(HookImpl<R1, Y, P1, Args1...>& h) {
             return add(h.impl());
         }
     } preHooks, postHooks;
@@ -183,10 +181,11 @@ template <typename T> class Self {
 template <typename T> class MovingSelf : public Self<T> {
    private:
     using Self = Self<T>;
+
    public:
     MovingSelf(T* p) : Self(p) {}
     MovingSelf(const MovingSelf&) = delete;
-    MovingSelf(MovingSelf&& other): Self(other), references(other.references) {
+    MovingSelf(MovingSelf&& other) : Self(other), references(other.references) {
         for (Reference* ref : references) {
             ref->self = this;
         }
@@ -196,18 +195,16 @@ template <typename T> class MovingSelf : public Self<T> {
             ref->self = nullptr;
         }
     }
-    template <typename R, typename... Args>
-    std::function<R(Args...)> movableHook(const auto& f) {
+    template <typename R, typename... Args> std::function<R(Args...)> movableHook(const auto& f) {
         auto ref = make_shared<Reference>(this);
         references.insert(ref.get());
-        return [f, ref = std::move(ref)](Args... a) {
-            return f(ref->self->self, std::forward<Args>(a)...);
-        };
+        return [f, ref = std::move(ref)](Args... a) { return f(ref->self->self, std::forward<Args>(a)...); };
     }
+
    protected:
    private:
     struct Reference {
-        Reference(MovingSelf* s): self(s) {}
+        Reference(MovingSelf* s) : self(s) {}
         MovingSelf* self;
         ~Reference() {
             if (self) {
@@ -225,7 +222,8 @@ class HookImpl : public promise::Self<P>, public promise::ObservablePromise<R, Y
     using Impl = ObservablePromise::Impl;
     HookImpl(P* p, Impl impl) : promise::Self<P>(p), ObservablePromise(impl) {}
     HookImpl(const HookImpl& other, Impl impl) : promise::Self<P>(other), ObservablePromise(other, impl) {}
-    public:
+
+   public:
     Impl& impl() { return ObservablePromise::impl; }
 };
 
@@ -237,7 +235,7 @@ class HookImpl : public promise::Self<P>, public promise::ObservablePromise<R, Y
                   p, promise::bind_member(&name::impl, this)){};                             \
         friend class Parent;                                                                 \
                                                                                              \
-       private:                                                                               \
+       private:                                                                              \
         name(const name& other)                                                              \
             : promise::HookImpl<result, yield, Parent __VA_OPT__(, __VA_ARGS__)>(            \
                   other, promise::bind_member(&name::impl, this)) {}                         \
