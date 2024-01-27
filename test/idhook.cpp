@@ -60,3 +60,29 @@ TEST_F(IDHookTest, remove_pre_hook) {
     EXPECT_TRUE(p->done());
     EXPECT_TRUE(p->returned_value());
 }
+
+TEST_F(IDHookTest, set_post_hook) {
+    auto p = empty_hook();
+    vector<int> called;
+    auto addCalled = [&called](int value) {
+        return [&called, value]() -> Promise<void> {
+            called.push_back(value);
+            co_return;
+        };
+    };
+    vector<size_t> ids;
+    for (int i = 0; i < 6; i++) {
+        ids.push_back(empty_hook.postHooks += addCalled(i));
+    }
+    EXPECT_TRUE(empty_hook.postHooks.set(ids[2], addCalled(10)));
+    EXPECT_TRUE(empty_hook.postHooks.remove(ids[4]));
+    EXPECT_FALSE(empty_hook.postHooks.set(ids[4], addCalled(10)));
+    vector<int> expected = {0, 1, 10, 3, 5};
+    p->start();
+    expected_counts[EMPTY_HOOK]++;
+    EXPECT_EQ(called, expected);
+    EXPECT_EQ(function_counts, expected_counts);
+    EXPECT_TRUE(p->started());
+    EXPECT_TRUE(p->done());
+    EXPECT_TRUE(p->returned_value());
+}

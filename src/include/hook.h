@@ -149,6 +149,13 @@ template <typename Y, typename... Args> class ObservablePromise<void, Y, Args...
             ids.erase(it);
             return true;
         }
+        bool set(size_t id, const Hook& h) {
+            auto it = std::find(ids.begin(), ids.end(), id);
+            if (it == ids.end()) return false;
+            size_t index = it - ids.begin();
+            hooks[index] = h;
+            return true;
+        }
         size_t operator+=(Hook h) { return add(h);}
         size_t operator+=(NoArgHook h) requires(sizeof...(Args) > 0) {
             return add([h](Args...) { return h(); });
