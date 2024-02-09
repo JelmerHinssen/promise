@@ -17,6 +17,9 @@ class SuspensionTest : public testing::Test {
         INT_SUSPENSION_0,
         INT_SUSPENSION_1,
         INT_SUSPENSION_2,
+        INT_IN_INT_SUSPENSION_0,
+        INT_IN_INT_SUSPENSION_1,
+        INT_IN_INT_SUSPENSION_2,
         NESTED_SUSPENSION_0,
         NESTED_SUSPENSION_1,
         NESTED_SUSPENSION_2,
@@ -55,6 +58,14 @@ class SuspensionTest : public testing::Test {
         function_counts[INT_SUSPENSION_1]++;
         co_yield x;
         function_counts[INT_SUSPENSION_2]++;
+    }
+    Promise<int, int> int_in_int_suspension() {
+        function_counts[INT_IN_INT_SUSPENSION_0]++;
+        auto x = co_await int_point;
+        function_counts[INT_IN_INT_SUSPENSION_1]++;
+        co_yield x;
+        function_counts[INT_IN_INT_SUSPENSION_2]++;
+        co_return x;
     }
     Promise<void, int> nested_suspension() {
         function_counts[NESTED_SUSPENSION_0]++;
@@ -127,6 +138,27 @@ TEST_F(SuspensionTest, intSuspension) {
     EXPECT_EQ(function_counts, expected_counts);
     EXPECT_TRUE(p->done());
     EXPECT_FALSE(p->yielded());
+}
+
+TEST_F(SuspensionTest, intInIntSuspension) {
+    auto p = int_in_int_suspension();
+    p->start();
+    expected_counts[INT_IN_INT_SUSPENSION_0]++;
+    EXPECT_EQ(function_counts, expected_counts);
+    EXPECT_FALSE(p->done());
+    EXPECT_FALSE(p->yielded());
+    int_point.resume(5);
+    expected_counts[INT_IN_INT_SUSPENSION_1]++;
+    EXPECT_EQ(function_counts, expected_counts);
+    EXPECT_FALSE(p->done());
+    EXPECT_TRUE(p->yielded());
+    EXPECT_EQ(p->yielded_value(), 5);
+    p->resume();
+    expected_counts[INT_IN_INT_SUSPENSION_2]++;
+    EXPECT_EQ(function_counts, expected_counts);
+    EXPECT_TRUE(p->done());
+    EXPECT_FALSE(p->yielded());
+    EXPECT_EQ(p->returned_value(), 5);
 }
 
 TEST_F(SuspensionTest, NestedSuspension) {

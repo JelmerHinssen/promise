@@ -13,7 +13,7 @@ list(REMOVE_ITEM PROMISE_SRC ${CMAKE_CURRENT_SOURCE_DIR}/main.cpp)
 add_library(promise_options INTERFACE)
 
 if(MSVC)
-target_compile_options(promise_options INTERFACE /W4 /Zc:preprocessor)
+target_compile_options(promise_options INTERFACE /W4 /Zc:preprocessor /MP)
 target_compile_definitions(promise_options INTERFACE DEBUG_MODE=$<CONFIG:Debug>)
 target_link_options(promise_options INTERFACE /ignore:4099)
 else()

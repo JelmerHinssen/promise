@@ -22,6 +22,11 @@ namespace detail {
 class WaitObject;
 }
 
+template <typename T>
+concept self_awaitable = requires(T&& arg) {
+    arg.operator co_await();
+};
+
 class Coroutine {
    public:
     Coroutine();
@@ -36,6 +41,7 @@ class Coroutine {
     std::suspend_always final_suspend() const noexcept { return {}; }
     void unhandled_exception() {}
     template <typename T> auto await_transform(SuspensionPoint<T>& s);
+    auto await_transform(self_awaitable auto&& s);
 
     class Handle {
        public:
@@ -279,6 +285,10 @@ template <typename T> auto Coroutine::await_transform(SuspensionPoint<T>& s) {
     s.set_handle({*this});
     m_wait_object = &s;
     return SuspensionPoint<T>::Awaiter(s);
+}
+
+auto Coroutine::await_transform(self_awaitable auto&& s) {
+    return s;
 }
 
 template <typename Y> auto YieldingCoroutine<Y>::await_transform(awaitable_range<Y> auto&& s) {
