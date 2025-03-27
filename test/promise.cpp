@@ -84,9 +84,7 @@ class PromiseTest : public testing::Test {
         co_await yield_things(10);
         co_await nested_yielding();
     }
-    Promise<void, void> yield_void() {
-        co_yield nothing;
-    }
+    Promise<void, void> yield_void() { co_yield nothing; }
     Promise<void, int> yield_void_in_int() {
         co_yield 1;
         co_yield nothing;
@@ -97,6 +95,26 @@ class PromiseTest : public testing::Test {
         co_await yield_void();
         co_yield 0;
     }
+    Promise<void, void> throw_exception() {
+        throw runtime_error("This is an error from a promise");
+        co_return;
+    }
+    Promise<void, void> throw_single_nested_exception() {
+        co_await throw_exception();
+        co_return;
+    }
+    Promise<void, void> throw_nested_exception() {
+        co_await throw_single_nested_exception();
+        co_return;
+    }
+
+    Promise<int, void> do_not_return() {
+        if (false) {
+            co_return 1;
+        }
+    }
+
+    Promise<int, void> do_return() { co_return co_await do_not_return(); }
 };
 
 TEST_F(PromiseTest, emptyCoroutine) {
@@ -234,6 +252,7 @@ TEST_F(PromiseTest, nestedYieldingCoroutine) {
     EXPECT_EQ(function_counts, expected_counts);
     EXPECT_EQ(living.size(), 2);
     EXPECT_TRUE(p->started());
+    EXPECT_FALSE(p->thrown());
     EXPECT_FALSE(p->done());
     EXPECT_FALSE(p->returned_value());
     EXPECT_EQ(p->yielded_value(), 5);
@@ -259,6 +278,7 @@ TEST_F(PromiseTest, nestedYieldingCoroutine) {
     EXPECT_TRUE(p->started());
     EXPECT_TRUE(p->done());
     EXPECT_TRUE(p->returned_value());
+    EXPECT_FALSE(p->thrown());
     EXPECT_FALSE(p->yielded_value());
     EXPECT_FALSE(p->yielded());
 }
@@ -298,6 +318,7 @@ TEST_F(PromiseTest, yieldVoidInInt) {
     p->resume();
     EXPECT_TRUE(p->yielded());
     EXPECT_FALSE(p->yielded_value());
+    EXPECT_FALSE(p->thrown());
     p->resume();
     EXPECT_TRUE(p->yielded());
     EXPECT_EQ(p->yielded_value(), 0);
@@ -318,9 +339,69 @@ TEST_F(PromiseTest, yieldVoidCombined) {
     EXPECT_EQ(p->yielded_value(), 0);
     p->resume();
     EXPECT_TRUE(p->done());
+    EXPECT_FALSE(p->thrown());
 }
 
-TEST_F(PromiseTest, discarded_coroutine) {
+TEST_F(PromiseTest, discardedCoroutine) {
     std::ignore = empty_co();
     EXPECT_EQ(function_counts, expected_counts);
+}
+
+TEST_F(PromiseTest, exceptionIsStored) {
+    auto p = throw_exception();
+    p->start();
+    EXPECT_TRUE(p->started());
+    EXPECT_TRUE(p->done());
+    EXPECT_FALSE(p->returned_value());
+    EXPECT_TRUE(p->thrown());
+    ASSERT_TRUE(p->exception());
+    try {
+        std::rethrow_exception(p->exception());
+    } catch (std::runtime_error& e) {
+        EXPECT_EQ(e.what(), "This is an error from a promise"s);
+    }
+}
+
+TEST_F(PromiseTest, nestedExceptionIsStored) {
+    auto p = throw_nested_exception();
+    p->start();
+    EXPECT_TRUE(p->started());
+    EXPECT_TRUE(p->done());
+    EXPECT_FALSE(p->returned_value());
+    EXPECT_TRUE(p->thrown());
+    ASSERT_TRUE(p->exception());
+    try {
+        std::rethrow_exception(p->exception());
+    } catch (std::runtime_error& e) {
+        EXPECT_EQ(e.what(), "This is an error from a promise"s);
+    }
+}
+
+TEST_F(PromiseTest, restartingPromiseWithExceptionThrows) {
+    auto p = throw_exception();
+    p->start();
+    EXPECT_TRUE(p->started());
+    EXPECT_TRUE(p->done());
+    EXPECT_FALSE(p->returned_value());
+    EXPECT_TRUE(p->thrown());
+    try {
+        p->resume();
+    } catch (std::runtime_error& e) {
+        EXPECT_EQ(e.what(), "This is an error from a promise"s);
+    }
+}
+
+TEST_F(PromiseTest, nestedNoReturnIsError) {
+    auto p = do_return();
+    p->start();
+    EXPECT_TRUE(p->started());
+    EXPECT_TRUE(p->done());
+    EXPECT_FALSE(p->returned_value());
+    EXPECT_TRUE(p->thrown());
+    ASSERT_TRUE(p->exception());
+    try {
+        std::rethrow_exception(p->exception());
+    } catch (std::runtime_error& e) {
+        EXPECT_EQ(e.what(), "Function did not return a value"s);
+    }
 }

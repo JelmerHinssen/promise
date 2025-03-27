@@ -22,10 +22,7 @@ namespace detail {
 class WaitObject;
 }
 
-template <typename T>
-concept self_awaitable = requires(T&& arg) {
-    arg.operator co_await();
-};
+template <typename T> concept self_awaitable = requires(T&& arg) { arg.operator co_await(); };
 
 class Coroutine {
    public:
@@ -36,10 +33,15 @@ class Coroutine {
     bool yielded() const noexcept { return m_yielded; }
     void start();
     void resume();
+    bool thrown() const noexcept { return m_thrown; }
+    std::exception_ptr exception() const noexcept { return m_exception; }
 
     std::suspend_always initial_suspend() const noexcept { return {}; }
     std::suspend_always final_suspend() const noexcept { return {}; }
-    void unhandled_exception() {}
+    void unhandled_exception() {
+        m_thrown = true;
+        m_exception = std::current_exception();
+    }
     template <typename T> auto await_transform(SuspensionPoint<T>& s);
     auto await_transform(self_awaitable auto&& s);
 
@@ -59,6 +61,8 @@ class Coroutine {
     bool wait_for_calling();
     bool m_yielded = false;
     bool m_started = false;
+    bool m_thrown = false;
+    std::exception_ptr m_exception = nullptr;
     struct YieldingHandle {
         Handle handle;
         std::function<void()> update_yield_value;
@@ -71,6 +75,7 @@ class Coroutine {
     void lose_ref();
     std::coroutine_handle<Coroutine> m_handle;
     int m_ref_count = 0;
+
 #ifdef TEST
    public:
     inline static std::unordered_set<const Coroutine*> living = {};
@@ -82,9 +87,7 @@ concept compatible_yield_type = requires(T&& arg, optional<Y>& y) { y = std::for
 template <typename Y> class YieldingCoroutine;
 
 template <typename T, typename Y>
-concept awaitable = requires(T&& arg, YieldingCoroutine<Y> co) {
-    co.await_transform(arg);
-};
+concept awaitable = requires(T&& arg, YieldingCoroutine<Y> co) { co.await_transform(arg); };
 
 template <typename T, typename Y>
 concept awaitable_range = std::ranges::range<T> && awaitable<std::ranges::range_value_t<T>, Y>;
@@ -170,12 +173,8 @@ class WaitObject {
         assert(m_handle);
         std::move(m_handle) = h;
     }
-    operator bool() const noexcept {
-        return m_handle.has_value();
-    }
-    bool operator!() const noexcept {
-        return !m_handle.has_value();
-    }
+    operator bool() const noexcept { return m_handle.has_value(); }
+    bool operator!() const noexcept { return !m_handle.has_value(); }
 
    protected:
     void resume_handle() {
@@ -263,6 +262,7 @@ inline void Coroutine::resume() {
     m_yielded = false;
     m_wait_object = nullptr;
     if (!calling || (calling->handle->resume(), wait_for_calling())) {
+        if (thrown()) std::rethrow_exception(exception());
         m_handle.resume();
     }
 }
@@ -287,9 +287,7 @@ template <typename T> auto Coroutine::await_transform(SuspensionPoint<T>& s) {
     return SuspensionPoint<T>::Awaiter(s);
 }
 
-auto Coroutine::await_transform(self_awaitable auto&& s) {
-    return s;
-}
+auto Coroutine::await_transform(self_awaitable auto&& s) { return s; }
 
 template <typename Y> auto YieldingCoroutine<Y>::await_transform(awaitable_range<Y> auto&& s) {
     return await_transform([&]() -> Promise<void> {
@@ -303,7 +301,10 @@ template <typename Y> auto YieldingCoroutine<Y>::await_transform(awaitable_range
             }
         };
         for (auto& x : s) {
-            auto waiter = [&, this]() -> Promise<void> { co_await x; resume();}();
+            auto waiter = [&, this]() -> Promise<void> {
+                co_await x;
+                resume();
+            }();
             waiter->start();
         }
         if (left > 0) {
@@ -339,7 +340,6 @@ template <typename Y> optional<Y> YieldingCoroutine<Y>::yielded_value() const no
 }
 template <typename Y> template <typename R1, typename Y1> bool YieldingCoroutine<Y>::Awaiter<R1, Y1>::await_ready() {
     callee->start();
-
     return callee->done();
 }
 
@@ -352,6 +352,7 @@ void YieldingCoroutine<Y>::Awaiter<R1, Y1>::await_suspend(auto caller_handle) {
 }
 
 template <typename Y> template <typename R1, typename Y1> R1 YieldingCoroutine<Y>::Awaiter<R1, Y1>::await_resume() {
+    if (callee->exception()) std::rethrow_exception(callee->exception());
     if constexpr (!std::is_void_v<R1>) {
         if (!callee->returned_value()) throw std::runtime_error("Function did not return a value");
         R1 ans = *callee->returned_value();
